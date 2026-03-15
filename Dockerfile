@@ -26,6 +26,7 @@ COPY --from=builder /app/app ./app
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/database ./database
 COPY --from=builder /app/prompts ./prompts
+COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/typings ./typings
 
 ENV NODE_ENV=production
