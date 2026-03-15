@@ -1,0 +1,82 @@
+name: Build & Deploy to Alibaba Cloud ECS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to ACR
+        run: |
+          docker login \
+            --username=${{ secrets.ACR_USERNAME }} \
+            --password=${{ secrets.ACR_PASSWORD }} \
+            crpi-af4waxurlq3ud70j.cn-hangzhou.personal.cr.aliyuncs.com
+
+      - name: Build & Push Docker image
+        run: |
+          docker build \
+            -t crpi-af4waxurlq3ud70j.cn-hangzhou.personal.cr.aliyuncs.com/takikawayuu/yuujin:${{ github.sha }} \
+            -t crpi-af4waxurlq3ud70j.cn-hangzhou.personal.cr.aliyuncs.com/takikawayuu/yuujin:latest \
+            .
+          docker push crpi-af4waxurlq3ud70j.cn-hangzhou.personal.cr.aliyuncs.com/takikawayuu/yuujin:${{ github.sha }}
+          docker push crpi-af4waxurlq3ud70j.cn-hangzhou.personal.cr.aliyuncs.com/takikawayuu/yuujin:latest
+
+      - name: Copy files to ECS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: root
+          key: ${{ secrets.ECS_SSH_KEY }}
+          source: "docker-compose.prod.yml,database/init.sql,nginx/default.conf"
+          target: /opt/yuujin
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: root
+          key: ${{ secrets.ECS_SSH_KEY }}
+          script: |
+            cd /opt/yuujin
+
+            # Login to ACR (use VPC address for internal network speed)
+            docker login \
+              --username=${{ secrets.ACR_USERNAME }} \
+              --password=${{ secrets.ACR_PASSWORD }} \
+              crpi-af4waxurlq3ud70j-vpc.cn-hangzhou.personal.cr.aliyuncs.com
+
+            # Pull latest image via VPC internal network
+            docker pull crpi-af4waxurlq3ud70j-vpc.cn-hangzhou.personal.cr.aliyuncs.com/takikawayuu/yuujin:latest
+
+            # Tag to match compose image name
+            docker tag crpi-af4waxurlq3ud70j-vpc.cn-hangzhou.personal.cr.aliyuncs.com/takikawayuu/yuujin:latest yuujin-server:latest
+
+            # Check .env exists
+            if [ ! -f .env ]; then
+              echo "ERROR: .env not found. Run init first."
+              exit 1
+            fi
+
+            # Start services
+            docker compose -f docker-compose.prod.yml up -d --force-recreate app
+
+            # Wait and smoke test
+            sleep 10
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:7001/ || echo "000")
+            if [ "$HTTP_CODE" = "000" ]; then
+              echo "WARNING: App may still be starting. Check: docker logs yuujin-app"
+            else
+              echo "Deploy success! HTTP status: $HTTP_CODE"
+            fi
+
+            # Cleanup
+            docker image prune -f

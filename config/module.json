@@ -1,0 +1,10 @@
+[
+  { "path": "../app/module/auth" },
+  { "path": "../app/module/conversation" },
+  { "path": "../app/module/ai" },
+  { "path": "../app/module/character" },
+  { "path": "../app/module/friend" },
+  { "path": "../app/module/user" },
+  { "path": "../app/module/news" },
+  { "path": "../app/module/credit" }
+]

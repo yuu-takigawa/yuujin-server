@@ -144,3 +144,4 @@ logs/
 typings/
 
 PROGRESS.md
+.egg/

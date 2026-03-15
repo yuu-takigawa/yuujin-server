@@ -1,0 +1,45 @@
+{
+  "name": "yuujin-server",
+  "version": "1.0.0",
+  "description": "Yuujin - AI-powered language learning companion server",
+  "private": true,
+  "egg": {
+    "typescript": true
+  },
+  "scripts": {
+    "dev": "egg-bin dev",
+    "debug": "egg-bin debug",
+    "test": "egg-bin test",
+    "cov": "egg-bin cov",
+    "tsc": "ets && tsc -p tsconfig.json",
+    "build": "npm run tsc",
+    "start": "egg-scripts start --title=yuujin-server",
+    "stop": "egg-scripts stop --title=yuujin-server",
+    "clean": "ets clean",
+    "seed": "ts-node scripts/seed.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@eggjs/tegg": "^3.72.0",
+    "@eggjs/tegg-config": "^3.72.0",
+    "@eggjs/tegg-controller-plugin": "^3.72.0",
+    "@eggjs/tegg-plugin": "^3.72.0",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
+    "egg": "^3.34.0",
+    "egg-orm": "^2.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.11.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/uuid": "^10.0.0",
+    "egg-bin": "^6.13.0",
+    "egg-scripts": "^3.1.0",
+    "egg-ts-helper": "^2.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.0"
+  }
+}
