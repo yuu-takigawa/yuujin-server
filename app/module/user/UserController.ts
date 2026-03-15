@@ -69,7 +69,10 @@ export class UserController {
     if (body.avatarUrl !== undefined) updates.avatarUrl = body.avatarUrl;
     if (body.avatarEmoji !== undefined) updates.avatarEmoji = body.avatarEmoji;
     if (body.jpLevel !== undefined) updates.jpLevel = body.jpLevel;
-    if (body.settings !== undefined) updates.settings = body.settings;
+    if (body.settings !== undefined) {
+      const existingSettings = (boneData(user).settings as Record<string, unknown>) || {};
+      updates.settings = { ...existingSettings, ...(body.settings as Record<string, unknown>) };
+    }
 
     if (Object.keys(updates).length === 0) {
       eggCtx.status = 400;

@@ -87,7 +87,18 @@ export class CreditService {
       if (found) model = boneData(found as Record<string, unknown>);
     }
     if (!model) {
-      // Default: best available model for user's tier
+      // Non-admin: try user's persisted default model
+      if (!isAdmin) {
+        const settings = (userData.settings as Record<string, unknown>) || {};
+        const defaultModelId = settings.defaultModelId as string | undefined;
+        if (defaultModelId) {
+          const found = await ctx.model.AiModel.findOne({ id: defaultModelId, isActive: 1 });
+          if (found) model = boneData(found as Record<string, unknown>);
+        }
+      }
+    }
+    if (!model) {
+      // Fallback: best available model for user's tier
       const userWeight = TIER_WEIGHT[membership] ?? 0;
       const allModels = await ctx.model.AiModel.find({ isActive: 1 }).order('display_order ASC');
       for (const m of allModels) {

@@ -35,6 +35,7 @@ export class AuthService {
       passwordHash,
       name,
       avatarEmoji,
+      settings: { defaultModelId: 'model-ernie-speed' },
     });
 
     const payload: JwtPayload = { userId: id, email };
