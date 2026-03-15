@@ -8,25 +8,26 @@
 
 <p align="center">
   <strong>Backend service for Yuujin — your AI Japanese friend.</strong><br>
-  No grammar drills. No flashcards. Just real conversations.
+  No grammar drills. No flashcards. Just real conversations with AI characters.
 </p>
 
 ---
 
 ## What is Yuujin?
 
-Yuujin (友人, "friend" in Japanese) is an AI-powered Japanese conversation partner that helps you learn Japanese the way native speakers do — through natural, immersive dialogue.
+Yuujin (友人, "friend" in Japanese) is an AI-powered Japanese conversation partner that helps you learn Japanese the way native speakers do — through natural, immersive dialogue with unique character personas.
 
-Unlike traditional language apps, Yuujin doesn't teach grammar rules. Instead, it creates a Japanese environment where you chat with an AI friend who adapts to your level. When you're curious about why something is said a certain way, just ask in Chinese — your friend explains with intuition and context, not textbook definitions.
+Unlike traditional language apps, Yuujin doesn't teach grammar rules. Instead, it creates a Japanese environment where you chat with AI friends who adapt to your level. When you're curious about why something is said a certain way, just ask in Chinese — your friend explains with intuition and context, not textbook definitions.
 
 ## Features
 
-- **Natural Conversation** — Chat with an AI friend who has personality, memory, and context awareness
-- **Adaptive Difficulty** — AI automatically adjusts language complexity based on your level
+- **Character System** — Chat with diverse AI characters, each with unique personalities, backgrounds, and speaking styles
+- **Friend System** — Add characters as friends to start conversations, with automatic self-introduction
+- **Natural Conversation** — AI friends have personality, memory, and context awareness
+- **Adaptive Difficulty** — AI automatically adjusts language complexity based on your JLPT level
 - **Seamless Code-Switching** — Ask "why?" in Chinese anytime, get intuitive explanations, then flow back into Japanese
-- **Grammar Tracking** — Behind the scenes, the system tracks which grammar patterns you've encountered and naturally used
-- **Conversation Review** — After each chat, see what new expressions you picked up and your progress over time
-- **Recast, Not Correct** — Instead of interrupting to fix mistakes, the AI naturally rephrases using correct expressions (just like a real friend would)
+- **News Reading** — Practice reading comprehension with annotated Japanese news articles
+- **Recast, Not Correct** — Instead of interrupting to fix mistakes, the AI naturally rephrases using correct expressions
 
 ## Tech Stack
 
@@ -34,43 +35,34 @@ Unlike traditional language apps, Yuujin doesn't teach grammar rules. Instead, i
 |-------|-----------|
 | Runtime | Node.js (>= 18) |
 | Language | TypeScript |
-| Framework | Express / Hono |
-| Database | PostgreSQL (Supabase) |
-| ORM | Drizzle ORM |
+| Framework | Egg.js + TEGG (IoC) |
+| Database | MySQL 8.0 |
+| Cache | Redis 7 |
+| ORM | Leoric (via egg-orm) |
 | AI | Claude API (Anthropic) |
-| Cache | Redis (Upstash) |
-| Deployment | Docker / Vercel |
+| Streaming | SSE (Server-Sent Events) |
+| Auth | JWT (jsonwebtoken + bcryptjs) |
 
 ## Project Structure
 
 ```
 yuujin-server/
-├── src/
-│   ├── routes/              # API route handlers
-│   │   ├── chat.ts          # Core conversation endpoint (streaming)
-│   │   ├── review.ts        # Post-conversation review
-│   │   ├── conversations.ts # Conversation CRUD
-│   │   └── users.ts         # User management
-│   ├── services/
-│   │   ├── ai.ts            # AI client wrapper
-│   │   ├── conversation.ts  # Conversation logic
-│   │   ├── grammar.ts       # Grammar tracking engine
-│   │   └── review.ts        # Review generation
-│   ├── lib/
-│   │   ├── prompt-loader.ts # Load system prompts (supports external config)
-│   │   ├── language.ts      # Language detection (ja/zh/mixed)
-│   │   └── level.ts         # Japanese level estimation
-│   ├── db/
-│   │   ├── schema.ts        # Drizzle schema definitions
-│   │   └── index.ts         # Database connection
-│   ├── types/
-│   │   └── index.ts         # Shared type definitions
-│   └── index.ts             # App entry point
-├── prompts/
-│   └── default.example.ts   # Example system prompt (basic version)
-├── drizzle/                  # Database migrations
+├── app/
+│   ├── module/
+│   │   ├── auth/             # JWT authentication
+│   │   ├── ai/               # AI abstraction layer (Claude, Qianwen)
+│   │   ├── conversation/     # Chat + SSE streaming
+│   │   ├── character/        # Character CRUD + presets
+│   │   ├── friend/           # Friend system + first message
+│   │   └── user/             # User profile + settings
+│   ├── model/                # Leoric ORM models (7 tables)
+│   └── middleware/           # Auth + CORS middleware
+├── config/                   # Egg.js + TEGG configuration
+├── database/                 # SQL schema + migration
+├── scripts/                  # Seed scripts
+├── prompts/                  # System prompts
+├── docker-compose.yml        # MySQL + Redis
 ├── .env.example
-├── Dockerfile
 ├── package.json
 └── tsconfig.json
 ```
@@ -80,99 +72,135 @@ yuujin-server/
 ### Prerequisites
 
 - Node.js >= 18
-- PostgreSQL database (or [Supabase](https://supabase.com) account)
+- Docker & Docker Compose (recommended)
 - Anthropic API key ([get one here](https://console.anthropic.com))
 
 ### Setup
 
 ```bash
-# Clone the repo
-git clone https://github.com/yuu-takigawa/yuujin-server.git
-cd yuujin-server
+# 1. Start MySQL + Redis via Docker Compose
+docker-compose up -d
 
-# Install dependencies
+# 2. Install dependencies
 npm install
 
-# Configure environment
+# 3. Configure environment
 cp .env.example .env
-# Edit .env with your database URL and API keys
+# Edit .env and set CLAUDE_API_KEY
 
-# Run database migrations
-npm run db:migrate
+# 4. Seed preset characters
+npm run seed
 
-# Start development server
+# 5. Start development server
 npm run dev
+# Server runs at http://localhost:7001
 ```
 
-### Environment Variables
+### For existing databases (migration from v2)
 
-```env
-# Database
-DATABASE_URL=postgresql://...
-
-# AI
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Optional: Custom prompt path (default uses prompts/default.example.ts)
-PROMPT_PATH=
-
-# Optional: Redis for caching
-REDIS_URL=
+```bash
+docker exec -i yuujin-server-mysql-1 mysql -uyuujin -pyuujin123 yuujin < database/migration-v3.sql
+npm run seed
 ```
 
-## API Overview
+## API Endpoints
 
-### `POST /api/chat`
-Send a message and receive a streaming AI response.
+### Auth
+- `POST /auth/register` — Register new user
+- `POST /auth/login` — Login
+- `POST /auth/refresh` — Refresh token
 
-```json
-{
-  "conversationId": "uuid",
-  "message": "今日は何してたの？"
-}
+### Characters
+- `GET /characters` — List all characters (presets + user-created)
+- `POST /characters` — Create custom character
+- `POST /characters/generate` — AI-generate character (stub)
+- `GET /characters/:id` — Get character details
+- `PUT /characters/:id` — Update custom character
+- `DELETE /characters/:id` — Delete custom character
+
+### Friends
+- `GET /friends` — List friends (with character info + last message)
+- `POST /friends` — Add friend `{ characterId }` (creates conversation + first message)
+- `DELETE /friends/:characterId` — Remove friend + conversation
+- `PUT /friends/:characterId` — Pin/mute friend
+
+### Chat
+- `POST /chat` — Send message (SSE streaming response) `{ conversationId, message }`
+
+### Conversations
+- `GET /conversations/` — List conversations (pinned first, then by last message)
+- `GET /conversations/:id` — Get conversation with messages
+- `DELETE /conversations/:id` — Delete conversation
+- `POST /conversations/:id/read` — Mark as read
+- `GET /conversations/:id/search?keyword=` — Search messages
+
+### User
+- `GET /users/me` — Get current user profile
+- `PUT /users/me` — Update profile (name, avatarUrl, jpLevel, settings)
+
+## Smoke Test
+
+```bash
+# Register
+curl -X POST http://localhost:7001/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"t@t.com","password":"123456","name":"T"}'
+
+# List characters (should see 3 presets)
+curl http://localhost:7001/characters \
+  -H "Authorization: Bearer <token>"
+
+# Add friend
+curl -X POST http://localhost:7001/friends \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"characterId":"preset-sato-yuki"}'
+
+# List conversations (should see first message)
+curl http://localhost:7001/conversations/ \
+  -H "Authorization: Bearer <token>"
+
+# Chat (SSE)
+curl -N -X POST http://localhost:7001/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"conversationId":"<id>","message":"こんにちは！"}'
+
+# Update user
+curl -X PUT http://localhost:7001/users/me \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"jpLevel":"N3"}'
 ```
-Response: Server-Sent Events (streaming)
 
-### `POST /api/conversations`
-Create a new conversation.
+## Database Schema (v3.1)
 
-### `GET /api/conversations/:id/review`
-Get post-conversation review with grammar insights.
-
-### `GET /api/users/:id/progress`
-Get user's grammar exposure and learning progress.
-
-> Full API documentation → [docs/api.md](docs/api.md)
-
-## Custom Prompts
-
-Yuujin's personality and teaching behavior are driven by system prompts. The repo includes a basic example prompt that works out of the box.
-
-To customize the AI friend's personality:
-
-1. Copy `prompts/default.example.ts`
-2. Modify the character settings, behavior rules, and teaching strategies
-3. Set `PROMPT_PATH` in your `.env` to point to your custom prompt file
-
-The hosted version of Yuujin uses fine-tuned prompts that are not included in this repo.
+| Table | Description |
+|-------|------------|
+| users | User accounts with JLPT level and settings |
+| characters | AI character personas (preset + custom) |
+| conversations | User-character conversations |
+| messages | Chat messages with language detection |
+| friendships | User-character friend relationships |
+| news | Japanese news articles with annotations |
+| news_reads | User news read tracking |
 
 ## Contributing
 
-Contributions are welcome! Whether it's bug fixes, new features, or improvements to the grammar tracking engine.
+Contributions are welcome! Whether it's bug fixes, new features, or improvements.
 
 1. Fork the repo
 2. Create your branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
+3. Commit your changes
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
 ## License
 
-MIT © [yuu-takigawa](https://github.com/yuu-takigawa)
+MIT
 
 ---
 
 <p align="center">
-  <strong>友人</strong> — Learn Japanese the way it's meant to be learned.<br>
-  Built with ❤️ by <a href="https://github.com/yuu-takigawa">Takigawa Yuu</a>
+  <strong>友人</strong> — Learn Japanese the way it's meant to be learned.
 </p>
