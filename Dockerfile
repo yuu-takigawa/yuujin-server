@@ -9,7 +9,10 @@ RUN npm ci
 
 # Copy source and build
 COPY . .
-RUN npm run build
+RUN npm run build && \
+    # Copy compiled JS back to source dirs so egg-scripts can find them
+    cp -r dist/config/*.js config/ && \
+    cp -r dist/app/ app-compiled/
 
 # ---- Production Stage ----
 FROM node:20-alpine
@@ -22,9 +25,10 @@ RUN npm ci && npm cache clean --force
 
 # Egg.js + TEGG requires full app/ directory structure at runtime
 # (TEGG scans modules, middleware, models at startup)
-COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/app ./app
 COPY --from=builder /app/config ./config
+# Overlay compiled JS files so egg-scripts loads them in production
+COPY --from=builder /app/app-compiled/ ./app/
 COPY --from=builder /app/database ./database
 COPY --from=builder /app/prompts ./prompts
 COPY --from=builder /app/scripts ./scripts
