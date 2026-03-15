@@ -12,7 +12,8 @@ COPY . .
 RUN npm run build && \
     # Copy compiled JS back to source dirs so egg-scripts can find them
     cp -r dist/config/*.js config/ && \
-    cp -r dist/app/ app-compiled/
+    cp -r dist/app/ app-compiled/ && \
+    cp -r dist/prompts/ prompts-compiled/
 
 # ---- Production Stage ----
 FROM node:20-alpine
@@ -31,6 +32,7 @@ COPY --from=builder /app/config ./config
 COPY --from=builder /app/app-compiled/ ./app/
 COPY --from=builder /app/database ./database
 COPY --from=builder /app/prompts ./prompts
+COPY --from=builder /app/prompts-compiled/ ./prompts/
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/typings ./typings
 
