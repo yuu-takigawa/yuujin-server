@@ -87,9 +87,16 @@ export class CreditService {
       if (found) model = boneData(found as Record<string, unknown>);
     }
     if (!model) {
-      // Default: first available free-tier model
-      const defaultModel = await ctx.model.AiModel.findOne({ minTier: 'free', isActive: 1 });
-      if (defaultModel) model = boneData(defaultModel as Record<string, unknown>);
+      // Default: best available model for user's tier
+      const userWeight = TIER_WEIGHT[membership] ?? 0;
+      const allModels = await ctx.model.AiModel.find({ isActive: 1 }).order('display_order ASC');
+      for (const m of allModels) {
+        const md = boneData(m as Record<string, unknown>);
+        const mWeight = TIER_WEIGHT[md.minTier as string] ?? 0;
+        if (userWeight >= mWeight) {
+          model = md; // Keep iterating to find the highest tier model user can access
+        }
+      }
     }
     if (!model) throw new Error('No available model');
 
