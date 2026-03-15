@@ -22,6 +22,7 @@ RUN npm ci && npm cache clean --force
 
 # Egg.js + TEGG requires full app/ directory structure at runtime
 # (TEGG scans modules, middleware, models at startup)
+COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/app ./app
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/database ./database
