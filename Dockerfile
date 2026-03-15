@@ -16,9 +16,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install production dependencies only
+# Install all dependencies (egg-scripts is in devDeps but needed for production start)
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci && npm cache clean --force
 
 # Egg.js + TEGG requires full app/ directory structure at runtime
 # (TEGG scans modules, middleware, models at startup)
