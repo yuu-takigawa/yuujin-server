@@ -87,14 +87,12 @@ export class CreditService {
       if (found) model = boneData(found as Record<string, unknown>);
     }
     if (!model) {
-      // Non-admin: try user's persisted default model
-      if (!isAdmin) {
-        const settings = (userData.settings as Record<string, unknown>) || {};
-        const defaultModelId = settings.defaultModelId as string | undefined;
-        if (defaultModelId) {
-          const found = await ctx.model.AiModel.findOne({ id: defaultModelId, isActive: 1 });
-          if (found) model = boneData(found as Record<string, unknown>);
-        }
+      // Try user's persisted default model
+      const settings = (userData.settings as Record<string, unknown>) || {};
+      const defaultModelId = settings.defaultModelId as string | undefined;
+      if (defaultModelId) {
+        const found = await ctx.model.AiModel.findOne({ id: defaultModelId, isActive: 1 });
+        if (found) model = boneData(found as Record<string, unknown>);
       }
     }
     if (!model) {
