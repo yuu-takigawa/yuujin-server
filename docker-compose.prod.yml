@@ -81,16 +81,32 @@ services:
       - '443:443'
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
-      - ./nginx/ssl:/etc/nginx/ssl  # Optional: for HTTPS later
-      - ./web:/usr/share/nginx/html  # Frontend static files
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./web:/usr/share/nginx/html
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
     depends_on:
       - app
     networks:
       - yuujin-net
+    # 每 6 小时自动 reload，让 certbot 续签的证书生效
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+
+  certbot:
+    image: certbot/certbot
+    container_name: yuujin-certbot
+    restart: unless-stopped
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    # 每 12 小时检查续签
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done'"
 
 volumes:
   mysql_data:
   redis_data:
+  certbot_conf:
+  certbot_www:
 
 networks:
   yuujin-net:
