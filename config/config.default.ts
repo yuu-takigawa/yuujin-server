@@ -76,6 +76,35 @@ export default () => {
         model: process.env.PRODUCT_ERNIE_MODEL || 'ernie-4.5',
       },
     },
+    // STT — 语音转文字（可插拔：ali | whisper）
+    stt: {
+      provider: process.env.STT_PROVIDER || 'ali',
+      ali: {
+        accessKeyId: process.env.ALI_STT_ACCESS_KEY_ID || '',
+        accessKeySecret: process.env.ALI_STT_ACCESS_KEY_SECRET || '',
+        appKey: process.env.ALI_STT_APP_KEY || '',
+        region: process.env.ALI_STT_REGION || 'cn-shanghai',
+      },
+      whisper: {
+        apiKey: process.env.OPENAI_API_KEY || '',
+        baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+        model: process.env.WHISPER_MODEL || 'whisper-1',
+      },
+    },
+    // OSS — 用户头像上传
+    oss: {
+      region: process.env.OSS_REGION || 'oss-cn-hangzhou',
+      bucket: process.env.OSS_BUCKET || '',
+      accessKeyId: process.env.OSS_ACCESS_KEY_ID || '',
+      accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || '',
+      cdnDomain: process.env.OSS_CDN_DOMAIN || '',
+    },
+    // 阿里云内容安全
+    contentModeration: {
+      accessKeyId: process.env.MODERATION_ACCESS_KEY_ID || '',
+      accessKeySecret: process.env.MODERATION_ACCESS_KEY_SECRET || '',
+      region: process.env.MODERATION_REGION || 'cn-shanghai',
+    },
     redis: {
       host: process.env.REDIS_HOST || '127.0.0.1',
       port: Number(process.env.REDIS_PORT) || 6379,
