@@ -49,7 +49,7 @@ export class FriendService {
 
     const charData = boneData(character as Record<string, unknown>);
 
-    // Create friendship
+    // Create friendship，将角色的初始 SOUL 固化到 per-user 关系中
     const friendshipId = uuidv4();
     await ctx.model.Friendship.create({
       id: friendshipId,
@@ -57,6 +57,7 @@ export class FriendService {
       characterId,
       isPinned: 0,
       isMuted: 0,
+      soul: (charData.initialSoul as string) || null,
     });
 
     // Create conversation

@@ -46,10 +46,8 @@ export class ChatController {
       conversationId?: string;
       message?: string;
       modelId?: string;
-      newsRef?: string;
-      topicRef?: string;
     };
-    const { conversationId, message, modelId, newsRef, topicRef } = body;
+    const { conversationId, message, modelId } = body;
     const aiConfig = eggCtx.app.config.bizConfig.ai;
 
     if (!message) {
@@ -124,8 +122,6 @@ export class ChatController {
 
     // Build metadata
     const metadata: Record<string, unknown> = {};
-    if (newsRef) metadata.newsRef = newsRef;
-    if (topicRef) metadata.topicRef = topicRef;
     if (modelId) metadata.modelId = modelId;
 
     // Save user message
@@ -151,24 +147,11 @@ export class ChatController {
     const stream = new PassThrough();
     eggCtx.body = stream;
 
-    // Build character-aware system prompt (BASE + SOUL + MEMORY)
+    // Build system prompt: Layer1(rules) + soul + memory + level
     const systemPrompt = buildSystemPrompt({
-      character: charData ? {
-        name: charData.name as string,
-        promptKey: (charData.promptKey as string) || undefined,
-        age: charData.age as number | undefined,
-        gender: charData.gender as string | undefined,
-        occupation: charData.occupation as string | undefined,
-        personality: charData.personality as string[] | undefined,
-        hobbies: charData.hobbies as string[] | undefined,
-        location: charData.location as string | undefined,
-        bio: charData.bio as string | undefined,
-      } : undefined,
       soul: (friendshipData?.soul as string) || null,
       memory: (friendshipData?.memory as string) || null,
       userLevel: (userData?.jpLevel as string) || undefined,
-      newsRef,
-      topicRef,
     });
 
     let fullResponse = '';

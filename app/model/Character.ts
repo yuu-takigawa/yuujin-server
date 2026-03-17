@@ -36,8 +36,9 @@ export default class Character extends Bone {
   @Column()
   bio!: string;
 
-  @Column({ name: 'prompt_key' })
-  promptKey!: string;
+  /** 角色初始灵魂：加好友时写入 friendship.soul 的起始值 */
+  @Column({ name: 'initial_soul' })
+  initialSoul!: string;
 
   @Column({ name: 'is_preset' })
   isPreset!: number;

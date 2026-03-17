@@ -1,6 +1,9 @@
 import * as dotenv from 'dotenv';
 import * as mysql from 'mysql2/promise';
 import { v4 as uuidv4 } from 'uuid';
+import { initialSoul as yukiSoul } from '../prompts/characters/sato_yuki_soul';
+import { initialSoul as kentaSoul } from '../prompts/characters/tanaka_kenta_soul';
+import { initialSoul as sakuraSoul } from '../prompts/characters/yamamoto_sakura_soul';
 
 dotenv.config();
 
@@ -16,7 +19,7 @@ const PRESET_CHARACTERS = [
     hobbies: JSON.stringify(['カフェ巡り', '写真撮影', 'スイーツ作り']),
     location: '東京・下北沢',
     bio: 'はじめまして！佐藤ゆきです。下北沢のカフェで働いています。おしゃべりが大好きで、いろんな話をするのが楽しみです。日本語の練習、一緒に頑張りましょう！気軽に話しかけてくださいね。',
-    prompt_key: 'sato_yuki',
+    initial_soul: yukiSoul,
     is_preset: 1,
   },
   {
@@ -30,7 +33,7 @@ const PRESET_CHARACTERS = [
     hobbies: JSON.stringify(['プログラミング', 'アニメ', 'ゲーム']),
     location: '東京・秋葉原',
     bio: 'やあ！田中健太です。IT企業でエンジニアをしています。アニメやゲームが好きで、秋葉原によく行きます。技術の話からサブカルの話まで、何でも話しましょう！日本語、一緒に楽しく学びましょう。',
-    prompt_key: 'tanaka_kenta',
+    initial_soul: kentaSoul,
     is_preset: 1,
   },
   {
@@ -44,7 +47,7 @@ const PRESET_CHARACTERS = [
     hobbies: JSON.stringify(['読書', '茶道', '旅行']),
     location: '京都',
     bio: 'こんにちは、山本さくらと申します。京都で日本語を教えています。日本の文化や歴史が大好きです。茶道も少し嗜んでいます。ゆっくり丁寧にお話ししますので、安心してくださいね。一緒に日本語を楽しみましょう。',
-    prompt_key: 'yamamoto_sakura',
+    initial_soul: sakuraSoul,
     is_preset: 1,
   },
 ];
@@ -235,7 +238,7 @@ async function seed() {
     }
 
     await connection.execute(
-      `INSERT INTO characters (id, user_id, name, avatar_url, age, gender, occupation, personality, hobbies, location, bio, prompt_key, is_preset)
+      `INSERT INTO characters (id, user_id, name, avatar_url, age, gender, occupation, personality, hobbies, location, bio, initial_soul, is_preset)
        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         char.id,
@@ -248,7 +251,7 @@ async function seed() {
         char.hobbies,
         char.location,
         char.bio,
-        char.prompt_key,
+        char.initial_soul,
         char.is_preset,
       ],
     );

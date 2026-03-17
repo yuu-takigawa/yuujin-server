@@ -1,6 +1,10 @@
 import { ContextProto, AccessLevel } from '@eggjs/tegg';
 import { Context } from 'egg';
 import { v4 as uuidv4 } from 'uuid';
+import { buildCustomCharacterPrompt } from '../../../prompts/characters/_custom_template';
+import { initialSoul as yukiSoul } from '../../../prompts/characters/sato_yuki_soul';
+import { initialSoul as kentaSoul } from '../../../prompts/characters/tanaka_kenta_soul';
+import { initialSoul as sakuraSoul } from '../../../prompts/characters/yamamoto_sakura_soul';
 
 function boneData(bone: Record<string, unknown>): Record<string, unknown> {
   if (typeof (bone as { getRaw?: Function }).getRaw === 'function') {
@@ -19,10 +23,9 @@ export interface CreateCharacterInput {
   hobbies?: string[];
   location?: string;
   bio?: string;
-  promptKey?: string;
 }
 
-const PRESET_CHARACTERS: (CreateCharacterInput & { id: string })[] = [
+const PRESET_CHARACTERS = [
   {
     id: 'preset-sato-yuki',
     name: '佐藤ゆき',
@@ -34,7 +37,7 @@ const PRESET_CHARACTERS: (CreateCharacterInput & { id: string })[] = [
     hobbies: ['カフェ巡り', '写真撮影', 'スイーツ作り'],
     location: '東京・下北沢',
     bio: 'はじめまして！佐藤ゆきです。下北沢のカフェで働いています。おしゃべりが大好きで、いろんな話をするのが楽しみです。日本語の練習、一緒に頑張りましょう！気軽に話しかけてくださいね。',
-    promptKey: 'sato_yuki',
+    initialSoul: yukiSoul,
   },
   {
     id: 'preset-tanaka-kenta',
@@ -47,7 +50,7 @@ const PRESET_CHARACTERS: (CreateCharacterInput & { id: string })[] = [
     hobbies: ['プログラミング', 'アニメ', 'ゲーム'],
     location: '東京・秋葉原',
     bio: 'やあ！田中健太です。IT企業でエンジニアをしています。アニメやゲームが好きで、秋葉原によく行きます。技術の話からサブカルの話まで、何でも話しましょう！日本語、一緒に楽しく学びましょう。',
-    promptKey: 'tanaka_kenta',
+    initialSoul: kentaSoul,
   },
   {
     id: 'preset-yamamoto-sakura',
@@ -60,7 +63,7 @@ const PRESET_CHARACTERS: (CreateCharacterInput & { id: string })[] = [
     hobbies: ['読書', '茶道', '旅行'],
     location: '京都',
     bio: 'こんにちは、山本さくらと申します。京都で日本語を教えています。日本の文化や歴史が大好きです。茶道も少し嗜んでいます。ゆっくり丁寧にお話ししますので、安心してくださいね。一緒に日本語を楽しみましょう。',
-    promptKey: 'yamamoto_sakura',
+    initialSoul: sakuraSoul,
   },
 ];
 
@@ -77,6 +80,8 @@ export class CharacterService {
 
   async create(ctx: Context, userId: string, input: CreateCharacterInput) {
     const id = uuidv4();
+    // 自定义角色：用表单字段生成初始 SOUL
+    const initialSoul = buildCustomCharacterPrompt(input) + '\n\n## 今のこの人との関係\n初めて話した新しい友達。まだよく知らないが、一緒に日本語の練習ができることを楽しみにしている。';
     await ctx.model.Character.create({
       id,
       userId,
@@ -89,7 +94,7 @@ export class CharacterService {
       hobbies: input.hobbies || [],
       location: input.location || '',
       bio: input.bio || '',
-      promptKey: input.promptKey || '',
+      initialSoul,
       isPreset: 0,
     });
     const created = await ctx.model.Character.findOne({ id });
@@ -115,7 +120,6 @@ export class CharacterService {
     if (input.hobbies !== undefined) updates.hobbies = input.hobbies;
     if (input.location !== undefined) updates.location = input.location;
     if (input.bio !== undefined) updates.bio = input.bio;
-    if (input.promptKey !== undefined) updates.promptKey = input.promptKey;
 
     await ctx.model.Character.update({ id }, updates);
     const updated = await ctx.model.Character.findOne({ id });
@@ -145,7 +149,7 @@ export class CharacterService {
         hobbies: preset.hobbies || [],
         location: preset.location || '',
         bio: preset.bio || '',
-        promptKey: preset.promptKey || '',
+        initialSoul: preset.initialSoul,
         isPreset: 1,
       });
     }
