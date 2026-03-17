@@ -49,4 +49,30 @@ export class CreditController {
       eggCtx.body = { success: false, error: (err as Error).message };
     }
   }
+
+  /** POST /subscriptions/upgrade  body: { tier: 'basic'|'premium' } */
+  @HTTPMethod({
+    method: HTTPMethodEnum.POST,
+    path: '/subscriptions/upgrade',
+  })
+  async upgrade(@Context() ctx: EggContext) {
+    const eggCtx = ctx as unknown as EggCtx;
+    const userId = (eggCtx as Record<string, unknown>).userId as string;
+    const body = eggCtx.request.body as { tier?: string };
+
+    const VALID_TIERS = ['basic', 'premium'];
+    if (!body.tier || !VALID_TIERS.includes(body.tier)) {
+      eggCtx.status = 400;
+      eggCtx.body = { success: false, error: 'tier must be basic or premium' };
+      return;
+    }
+
+    try {
+      const result = await this.creditService.upgradeMembership(eggCtx, userId, body.tier);
+      eggCtx.body = { success: true, data: result };
+    } catch (err: unknown) {
+      eggCtx.status = 500;
+      eggCtx.body = { success: false, error: (err as Error).message };
+    }
+  }
 }

@@ -142,6 +142,32 @@ export class CreditService {
   }
 
   /**
+   * Upgrade user membership tier
+   * NOTE: In production this should be called after payment confirmation.
+   * For now it directly upgrades to enable end-to-end testing.
+   */
+  async upgradeMembership(ctx: Context, userId: string, tier: string) {
+    const user = await ctx.model.User.findOne({ id: userId });
+    if (!user) throw new Error('User not found');
+
+    const plan = await ctx.model.MembershipPlan.findOne({ tier });
+    if (!plan) throw new Error('Plan not found');
+    const planData = boneData(plan as Record<string, unknown>);
+
+    await ctx.model.User.update({ id: userId }, {
+      membership: tier,
+      credits: planData.dailyCredits as number,
+      creditsResetAt: new Date(),
+    });
+
+    return {
+      membership: tier,
+      credits: planData.dailyCredits as number,
+      dailyCredits: planData.dailyCredits as number,
+    };
+  }
+
+  /**
    * Deduct credits after successful AI response
    */
   async deductCredits(ctx: Context, userId: string, modelId: string, creditsPerChat: number, isAdmin: boolean) {

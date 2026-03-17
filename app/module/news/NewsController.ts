@@ -75,4 +75,5 @@ export class NewsController {
     }
     return { success: true };
   }
+
 }

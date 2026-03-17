@@ -98,4 +98,26 @@ export class UserController {
       },
     };
   }
+
+  @HTTPMethod({
+    method: HTTPMethodEnum.DELETE,
+    path: '/me',
+  })
+  async deleteMe(@Context() ctx: EggContext) {
+    const eggCtx = ctx as unknown as EggCtx;
+    const userId = (eggCtx as Record<string, unknown>).userId as string;
+
+    const user = await eggCtx.model.User.findOne({ id: userId });
+    if (!user) {
+      eggCtx.status = 404;
+      return { success: false, error: 'User not found' };
+    }
+
+    // Cascade: delete user's data
+    await eggCtx.model.NewsRead.remove({ userId });
+    await eggCtx.model.NewsComment.remove({ userId });
+    await eggCtx.model.User.remove({ id: userId });
+
+    return { success: true };
+  }
 }
