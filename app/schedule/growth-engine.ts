@@ -15,12 +15,6 @@ const MIN_MESSAGES_TO_GROW = 3;
 /** 最后一条消息多久后才触发成长（毫秒） */
 const IDLE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
-export const schedule = {
-  interval: '5m',
-  type: 'worker', // 只有一个 worker 执行，避免并发
-  immediate: false,
-};
-
 function boneToRaw(bone: unknown): Record<string, unknown> {
   if (bone && typeof (bone as { getRaw?: () => Record<string, unknown> }).getRaw === 'function') {
     return (bone as { getRaw: () => Record<string, unknown> }).getRaw();
@@ -29,6 +23,12 @@ function boneToRaw(bone: unknown): Record<string, unknown> {
 }
 
 export default class GrowthEngine extends Subscription {
+  static schedule = {
+    interval: '5m',
+    type: 'worker', // 只有一个 worker 执行，避免并发
+    immediate: false,
+  };
+
   async subscribe() {
     const ctx = this.ctx;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

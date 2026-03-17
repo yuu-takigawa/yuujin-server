@@ -13,12 +13,6 @@ import { NewsFetcherService } from '../module/news/fetcher/NewsFetcherService';
 import { NewsAnnotatorService, NewsAnnotations } from '../module/news/fetcher/NewsAnnotatorService';
 import { ProductAIConfig } from '../module/ai/ProductAIService';
 
-export const schedule = {
-  cron: '0 * * * *', // 每整点运行
-  type: 'worker',
-  immediate: true,   // 启动时立即运行一次
-};
-
 function boneData(bone: unknown): Record<string, unknown> {
   if (bone && typeof (bone as { getRaw?: () => Record<string, unknown> }).getRaw === 'function') {
     return (bone as { getRaw: () => Record<string, unknown> }).getRaw();
@@ -27,6 +21,11 @@ function boneData(bone: unknown): Record<string, unknown> {
 }
 
 export default class NewsFetcher extends Subscription {
+  static schedule = {
+    cron: '0 * * * *', // 每整点运行
+    type: 'worker',
+    immediate: true,   // 启动时立即运行一次
+  };
   async subscribe() {
     const ctx = this.ctx;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -18,12 +18,6 @@ const PRESET_CHARACTER_IDS = [
   'preset-yamamoto-sakura',
 ];
 
-export const schedule = {
-  interval: '30m',
-  type: 'worker',
-  immediate: false,
-};
-
 function boneData(bone: unknown): Record<string, unknown> {
   if (bone && typeof (bone as { getRaw?: () => Record<string, unknown> }).getRaw === 'function') {
     return (bone as { getRaw: () => Record<string, unknown> }).getRaw();
@@ -32,6 +26,11 @@ function boneData(bone: unknown): Record<string, unknown> {
 }
 
 export default class AICommenter extends Subscription {
+  static schedule = {
+    interval: '30m',
+    type: 'worker',
+    immediate: false,
+  };
   async subscribe() {
     const ctx = this.ctx;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
