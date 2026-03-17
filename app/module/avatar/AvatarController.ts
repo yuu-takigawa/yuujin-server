@@ -17,7 +17,19 @@ import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
 import { v4 as uuidv4 } from 'uuid';
 import { OSSService } from './OSSService';
-import { ContentModerationService } from './ContentModerationService';
+
+const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+
+function checkMime(mimeType: string, size: number): { ok: boolean; reason?: string } {
+  if (!ALLOWED_MIME.includes(mimeType)) {
+    return { ok: false, reason: `不支持的图片格式: ${mimeType}。支持 JPEG / PNG / WebP / GIF` };
+  }
+  if (size > MAX_SIZE) {
+    return { ok: false, reason: '图片不能超过 5MB' };
+  }
+  return { ok: true };
+}
 
 // いらすとや 风格预设头像（公共域名图，暂用 placeholder 路径）
 // 实际部署时替换为上传到 OSS 后的 CDN URL
@@ -42,12 +54,6 @@ export class AvatarController {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const config = (ctx.app.config as any).bizConfig?.oss;
     return new OSSService(config);
-  }
-
-  private getModerationService(ctx: EggCtx): ContentModerationService {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const config = (ctx.app.config as any).bizConfig?.contentModeration;
-    return new ContentModerationService(config);
   }
 
   /** GET /avatars/presets */
@@ -88,9 +94,6 @@ export class AvatarController {
     const target = fields.target || 'user';      // 'user' | 'character'
     const targetId = fields.targetId || userId;
 
-    // 1. MIME 校验（本地，立即）
-    const modService = this.getModerationService(eggCtx);
-
     // 收集 Buffer
     const chunks: Buffer[] = [];
     for await (const chunk of fileStream) {
@@ -98,39 +101,27 @@ export class AvatarController {
     }
     const buffer = Buffer.concat(chunks);
 
-    const mimeCheck = modService.checkMime(mimeType, buffer.length);
+    // MIME 校验（本地，无外部服务）
+    const mimeCheck = checkMime(mimeType, buffer.length);
     if (!mimeCheck.ok) {
       eggCtx.status = 422;
       return { success: false, error: mimeCheck.reason };
     }
 
-    // 2. 上传到 OSS
-    const ext = mimeType.split('/')[1] || 'jpg';
+    // 上传到 OSS
+    const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
     const key = `avatars/${userId}/${uuidv4()}.${ext}`;
     let uploadResult: { url: string; key: string };
 
     try {
       const ossService = this.getOSSService(eggCtx);
       uploadResult = await ossService.upload(key, buffer, mimeType);
-    } catch (err) {
+    } catch {
       eggCtx.status = 500;
       return { success: false, error: 'Upload to OSS failed' };
     }
 
-    // 3. 内容安全审核（异步，不阻塞用户响应）
-    modService.moderate(uploadResult.url).then(async (result) => {
-      if (!result.pass) {
-        // 删除 OSS 文件（可选，简单处理：记录日志）
-        eggCtx.logger.warn(`[Avatar] Content moderation failed for ${uploadResult.url}: ${result.reason}`);
-        // TODO: 实际场景需要删除 OSS 对象 + 通知用户
-      }
-      if (result.needsReview) {
-        eggCtx.logger.info(`[Avatar] Needs human review: ${uploadResult.url}`);
-        // TODO: 加入人工审核队列
-      }
-    }).catch(() => { /* ignore moderation errors */ });
-
-    // 4. 立即更新角色/用户头像 URL
+    // 更新角色/用户头像 URL
     if (target === 'character') {
       const char = await eggCtx.model.Character.findOne({ id: targetId, userId, isPreset: 0 });
       if (char) {

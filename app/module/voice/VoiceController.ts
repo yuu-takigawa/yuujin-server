@@ -5,8 +5,8 @@
  *   multipart/form-data: file (audio), language? (ja|zh|en)
  *
  * 根据环境变量 STT_PROVIDER 选择实现：
- *   ali    — 阿里云 NLS（默认，国内推荐）
- *   whisper — OpenAI Whisper（国际）
+ *   dashscope — 阿里云百炼 Paraformer（默认，复用 QIANWEN_API_KEY）
+ *   whisper   — OpenAI Whisper（国际备选）
  */
 
 import {
@@ -17,7 +17,7 @@ import {
 } from '@eggjs/tegg';
 import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
-import { AliSTTProvider } from './stt/AliSTTProvider';
+import { DashScopeSTTProvider } from './stt/DashScopeSTTProvider';
 import { WhisperProvider } from './stt/WhisperProvider';
 import { STTProvider } from './stt/STTProvider';
 
@@ -28,7 +28,7 @@ export class VoiceController {
   private getSTTProvider(ctx: EggCtx): STTProvider {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const bizConfig = (ctx.app.config as any).bizConfig;
-    const sttProvider = process.env.STT_PROVIDER || bizConfig?.stt?.provider || 'ali';
+    const sttProvider = process.env.STT_PROVIDER || bizConfig?.stt?.provider || 'dashscope';
 
     if (sttProvider === 'whisper') {
       return new WhisperProvider({
@@ -37,13 +37,10 @@ export class VoiceController {
       });
     }
 
-    // Default: AliCloud NLS
-    return new AliSTTProvider({
-      accessKeyId: process.env.ALI_STT_ACCESS_KEY_ID || bizConfig?.stt?.ali?.accessKeyId || '',
-      accessKeySecret: process.env.ALI_STT_ACCESS_KEY_SECRET || bizConfig?.stt?.ali?.accessKeySecret || '',
-      appKey: process.env.ALI_STT_APP_KEY || bizConfig?.stt?.ali?.appKey || '',
-      region: process.env.ALI_STT_REGION || bizConfig?.stt?.ali?.region || 'cn-shanghai',
-    });
+    // Default: DashScope Paraformer（百炼，与 Chat AI 共用 QIANWEN_API_KEY）
+    const apiKey = process.env.QIANWEN_API_KEY || bizConfig?.ai?.qianwen?.apiKey || '';
+    const model = process.env.DASHSCOPE_STT_MODEL || bizConfig?.stt?.dashscope?.model || 'paraformer-realtime-v2';
+    return new DashScopeSTTProvider(apiKey, model);
   }
 
   /** POST /voice/transcribe */
