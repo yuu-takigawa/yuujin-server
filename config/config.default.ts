@@ -56,6 +56,26 @@ export default () => {
         model: process.env.ERNIE_MODEL || 'ernie-speed',
       },
     },
+    // ProductAI: 高质量模型，用于后台任务（GrowthEngine、话题生成等）
+    productAi: {
+      provider: process.env.PRODUCT_AI_PROVIDER || 'qianwen',
+      claude: {
+        apiKey: process.env.CLAUDE_API_KEY || '',
+        model: process.env.PRODUCT_CLAUDE_MODEL || 'claude-opus-4-6',
+      },
+      qianwen: {
+        apiKey: process.env.QIANWEN_API_KEY || '',
+        model: process.env.PRODUCT_QIANWEN_MODEL || 'qwen-max',
+      },
+      deepseek: {
+        apiKey: process.env.DEEPSEEK_API_KEY || '',
+        model: process.env.PRODUCT_DEEPSEEK_MODEL || 'deepseek-reasoner',
+      },
+      ernie: {
+        apiKey: process.env.ERNIE_API_KEY || '',
+        model: process.env.PRODUCT_ERNIE_MODEL || 'ernie-4.5',
+      },
+    },
     redis: {
       host: process.env.REDIS_HOST || '127.0.0.1',
       port: Number(process.env.REDIS_PORT) || 6379,

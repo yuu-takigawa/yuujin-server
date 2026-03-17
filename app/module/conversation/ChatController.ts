@@ -115,6 +115,10 @@ export class ChatController {
     const user = await eggCtx.model.User.findOne({ id: userId });
     const userData = user ? boneData(user as Record<string, unknown>) : null;
 
+    // Load per-friendship soul + memory
+    const friendship = await eggCtx.model.Friendship.findOne({ userId, characterId });
+    const friendshipData = friendship ? boneData(friendship as Record<string, unknown>) : null;
+
     // Detect language of user message
     const language = detectLanguage(message);
 
@@ -147,7 +151,7 @@ export class ChatController {
     const stream = new PassThrough();
     eggCtx.body = stream;
 
-    // Build character-aware system prompt
+    // Build character-aware system prompt (BASE + SOUL + MEMORY)
     const systemPrompt = buildSystemPrompt({
       character: charData ? {
         name: charData.name as string,
@@ -160,6 +164,8 @@ export class ChatController {
         location: charData.location as string | undefined,
         bio: charData.bio as string | undefined,
       } : undefined,
+      soul: (friendshipData?.soul as string) || null,
+      memory: (friendshipData?.memory as string) || null,
       userLevel: (userData?.jpLevel as string) || undefined,
       newsRef,
       topicRef,

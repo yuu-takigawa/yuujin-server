@@ -23,7 +23,14 @@ export function loadDefaultPrompt(): string {
 }
 
 /**
- * Build a system prompt based on character and user context
+ * Build a system prompt based on character and user context.
+ *
+ * Composition order:
+ *   1. BASE  — character's base prompt file (or custom template / default)
+ *   2. SOUL  — per-friendship soul state (AI-evolved personality toward this user)
+ *   3. MEMORY — per-friendship memory (what character remembers about this user)
+ *   4. User level context
+ *   5. Topic / news references
  */
 export function buildSystemPrompt(options: {
   character?: {
@@ -37,13 +44,17 @@ export function buildSystemPrompt(options: {
     location?: string;
     bio?: string;
   };
+  /** Per-friendship soul: character's evolved personality toward this specific user */
+  soul?: string | null;
+  /** Per-friendship memory: factual memories about this specific user */
+  memory?: string | null;
   userLevel?: string;
   newsRef?: string;
   topicRef?: string;
 }): string {
   let prompt: string;
 
-  // 1. Try character-specific prompt by promptKey
+  // 1. BASE — try character-specific prompt by promptKey
   if (options.character?.promptKey) {
     const loaded = loadCharacterPrompt(options.character.promptKey);
     if (loaded) {
@@ -60,7 +71,17 @@ export function buildSystemPrompt(options: {
     prompt = defaultPrompt;
   }
 
-  // 2. Append user level context
+  // 2. SOUL — per-friendship evolved personality toward this user
+  if (options.soul) {
+    prompt += `\n\n## この会話相手との関係性\n${options.soul}`;
+  }
+
+  // 3. MEMORY — per-friendship memories about this user
+  if (options.memory) {
+    prompt += `\n\n## この会話相手についての記憶\n${options.memory}`;
+  }
+
+  // 4. User level context
   if (options.userLevel) {
     const levelDescriptions: Record<string, string> = {
       none: '完全な初心者（日本語を学んだことがない）。ひらがなから始めて、非常にシンプルな日本語を使ってください。中国語での補足を多めに。',
@@ -69,12 +90,13 @@ export function buildSystemPrompt(options: {
       N3: '中級（JLPT N3レベル）。日常的な日本語はだいたい理解できます。自然な会話ができます。',
       N2: '中上級（JLPT N2レベル）。新聞やニュースも理解できます。より自然で複雑な表現を使ってください。',
       N1: '上級（JLPT N1レベル）。ほぼネイティブレベル。自然な日本語で普通に会話してください。',
+      native: '母語話者レベル。敬語・タメ口・方言・スラングを含め、完全に自然な日本語で話してください。学習者への配慮は不要です。',
     };
     const desc = levelDescriptions[options.userLevel] || levelDescriptions['N5'];
     prompt += `\n\n## 学習者のレベル\n${desc}`;
   }
 
-  // 3. Append context references
+  // 5. Topic / news references
   if (options.topicRef) {
     prompt += `\n\n## 話題\nユーザーが以下の話題について話したいと思っています: 「${options.topicRef}」\nこの話題から自然に会話を始めてください。`;
   }
