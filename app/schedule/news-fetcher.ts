@@ -79,11 +79,17 @@ export default class NewsFetcher extends Subscription {
         );
 
         if (updated.paragraphs?.length > 0) {
-          // 注释成功 → 保存注释，有图则发布
+          // 从 AI 注释段落生成干净的摘要（取前 200 字）
+          const aiSummary = updated.paragraphs
+            .map((p: { text?: string }) => p.text || '')
+            .join(' ')
+            .slice(0, 200);
+          // 注释成功 → 保存注释+摘要，有图则发布
           await ctx.model.News.update(
             { id: article.id },
             {
               annotations: JSON.stringify(updated),
+              summary: aiSummary || (article.summary as string),
               status: hasImage ? 'published' : 'draft',
             },
           );
