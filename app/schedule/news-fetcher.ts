@@ -57,12 +57,17 @@ export default class NewsFetcher extends Subscription {
           existing = { imageEmoji: '📰', paragraphs: [], comments: [] };
         }
 
+        // 质量门控：必须有封面图才能发布
+        const hasImage = !!(article.imageUrl as string);
+
         if (existing.paragraphs?.length > 0) {
-          // 已有注释但还是 draft（可能上次标记失败），直接发布
-          await ctx.model.News.update(
-            { id: article.id },
-            { status: 'published' },
-          );
+          // 已有注释但还是 draft，检查图片后发布
+          if (hasImage) {
+            await ctx.model.News.update(
+              { id: article.id },
+              { status: 'published' },
+            );
+          }
           continue;
         }
 
@@ -74,12 +79,15 @@ export default class NewsFetcher extends Subscription {
         );
 
         if (updated.paragraphs?.length > 0) {
-          // 注释成功 → 保存注释 + 标记为 published
+          // 注释成功 → 保存注释，有图则发布
           await ctx.model.News.update(
             { id: article.id },
-            { annotations: JSON.stringify(updated), status: 'published' },
+            {
+              annotations: JSON.stringify(updated),
+              status: hasImage ? 'published' : 'draft',
+            },
           );
-          annotated++;
+          if (hasImage) annotated++;
         }
       }
       ctx.logger.info(`[NewsFetcher] Annotated & published ${annotated} articles`);
