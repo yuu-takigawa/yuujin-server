@@ -15,7 +15,7 @@ function boneData(bone: Record<string, unknown>): Record<string, unknown> {
 export class NewsService {
   async list(ctx: Context, options?: { category?: string; difficulty?: string; limit?: number }) {
     const limit = options?.limit || 20;
-    let query: Record<string, unknown> = {};
+    let query: Record<string, unknown> = { status: 'published' };
     if (options?.category) query.category = options.category;
     if (options?.difficulty) query.difficulty = options.difficulty;
 

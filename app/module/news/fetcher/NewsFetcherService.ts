@@ -4,15 +4,15 @@
  * 来源:
  *   1. Yahoo! ニュース 主要（N4 — 学習者向け短文見出し）
  *   2. Yahoo! ニュース IT/テクノロジー（N3）
- *   3. 朝日新聞 RSS（N2）
+ *   3. NHK ニュース RSS（N2 — 标准新闻）
+ *   4. 朝日新聞 RDF（N1 — 高级新闻）
  *
- * 注：NHK Web Easy は 2025 年以降認証必須になり ECS からアクセス不可のため
- *     Yahoo Japan に切り替え。
- *
- * 流程: 抓取 → XML 解析 → 去重（source_url）→ 存 DB → 触发 AI 注释
+ * 流程:
+ *   抓取 RSS → 去重 → 存 DB → 抓源 URL 全文+OG 图 → 图片转存 OSS → 更新 DB
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { OSSService, OSSConfig } from '../../avatar/OSSService';
 
 export interface RawArticle {
   title: string;
@@ -40,21 +40,16 @@ function extractTag(xml: string, tag: string): string {
   return '';
 }
 
-/**
- * RSS 2.0（<item>）と RDF 1.0（<item rdf:about="...">）両方に対応
- */
 function parseRSSItems(xml: string): Array<{
   title: string; link: string; description: string;
   pubDate: string; enclosure: string; category: string;
 }> {
   const items: ReturnType<typeof parseRSSItems> = [];
-  // <item> or <item rdf:about="..."> both matched by [^>]*
   const itemRe = /<item[^>]*>([\s\S]*?)<\/item>/gi;
   let match: RegExpExecArray | null;
   while ((match = itemRe.exec(xml)) !== null) {
     const block = match[1];
     const enclosureMatch = block.match(/<enclosure[^>]+url="([^"]+)"/i);
-    // dc:date fallback for RDF feeds
     const pubDate = extractTag(block, 'pubDate') || extractTag(block, 'dc:date');
     items.push({
       title: extractTag(block, 'title'),
@@ -68,7 +63,7 @@ function parseRSSItems(xml: string): Array<{
   return items;
 }
 
-// ─── 各ソース抓取ロジック ──────────────────────────────────────────────────────
+// ─── HTTP ヘルパー ──────────────────────────────────────────────────────────
 
 async function fetchWithTimeout(url: string, timeoutMs = 12000): Promise<Response> {
   const controller = new AbortController();
@@ -76,7 +71,8 @@ async function fetchWithTimeout(url: string, timeoutMs = 12000): Promise<Respons
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'Yuujin-NewsBot/1.0 (+https://yuujin.cc)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Yuujin-NewsBot/1.0)' },
+      redirect: 'follow',
     });
     return res;
   } finally {
@@ -84,16 +80,64 @@ async function fetchWithTimeout(url: string, timeoutMs = 12000): Promise<Respons
   }
 }
 
-/** Yahoo! ニュース 主要トピック — N4 学習者向け */
+// ─── 源ページ解析（全文 + OG画像を1回の fetch で取得）─────────────────────────
+
+interface PageData {
+  body: string;     // 正文（<p> 标签提取）
+  ogImage: string;  // og:image URL
+}
+
+/**
+ * 从源 URL 抓取网页，一次性提取正文和 OG 图片。
+ */
+async function fetchPageData(url: string): Promise<PageData> {
+  try {
+    const res = await fetchWithTimeout(url, 10000);
+    if (!res.ok) return { body: '', ogImage: '' };
+    const html = await res.text();
+
+    // --- OG Image ---
+    let ogImage = '';
+    const headHtml = html.slice(0, 30000);
+    const ogMatch = headHtml.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+      || headHtml.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if (ogMatch?.[1]) ogImage = ogMatch[1];
+    if (!ogImage) {
+      const twMatch = headHtml.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)
+        || headHtml.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i);
+      if (twMatch?.[1]) ogImage = twMatch[1];
+    }
+
+    // --- 正文提取 ---
+    const paragraphs: string[] = [];
+    const pRegex = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = pRegex.exec(html)) !== null) {
+      const text = m[1]
+        .replace(/<[^>]+>/g, '')
+        .replace(/&[a-z]+;/gi, ' ')
+        .replace(/&#\d+;/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (text.length >= 15) paragraphs.push(text);
+    }
+    const body = paragraphs.join('\n');
+
+    return { body, ogImage };
+  } catch {
+    return { body: '', ogImage: '' };
+  }
+}
+
+// ─── 各ソース抓取ロジック ──────────────────────────────────────────────────────
+
 async function fetchYahooMain(): Promise<RawArticle[]> {
   const url = 'https://news.yahoo.co.jp/rss/topics/top-picks.xml';
   try {
     const res = await fetchWithTimeout(url);
     if (!res.ok) return [];
     const xml = await res.text();
-    const items = parseRSSItems(xml);
-
-    return items.slice(0, 10).map((item) => ({
+    return parseRSSItems(xml).slice(0, 10).map((item) => ({
       title: item.title,
       summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
       content: item.description.replace(/<[^>]+>/g, '') || item.title,
@@ -104,21 +148,16 @@ async function fetchYahooMain(): Promise<RawArticle[]> {
       category: mapCategory(item.category || item.title),
       difficulty: 'N4',
     }));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-/** Yahoo! ニュース IT — N3 */
 async function fetchYahooIT(): Promise<RawArticle[]> {
   const url = 'https://news.yahoo.co.jp/rss/topics/it.xml';
   try {
     const res = await fetchWithTimeout(url);
     if (!res.ok) return [];
     const xml = await res.text();
-    const items = parseRSSItems(xml);
-
-    return items.slice(0, 8).map((item) => ({
+    return parseRSSItems(xml).slice(0, 8).map((item) => ({
       title: item.title,
       summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
       content: item.description.replace(/<[^>]+>/g, '') || item.title,
@@ -129,35 +168,47 @@ async function fetchYahooIT(): Promise<RawArticle[]> {
       category: 'technology',
       difficulty: 'N3',
     }));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-/** 朝日新聞 RDF — N2 */
+async function fetchNHK(): Promise<RawArticle[]> {
+  const url = 'https://news.web.nhk/n-data/conf/na/rss/cat0.xml';
+  try {
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) return [];
+    const xml = await res.text();
+    return parseRSSItems(xml).slice(0, 10).map((item) => ({
+      title: item.title,
+      summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
+      content: item.description.replace(/<[^>]+>/g, '') || item.title,
+      sourceUrl: item.link,
+      source: 'NHKニュース',
+      imageUrl: '',
+      publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
+      category: mapCategory(item.category || item.title),
+      difficulty: 'N2',
+    }));
+  } catch { return []; }
+}
+
 async function fetchAsahi(): Promise<RawArticle[]> {
   const url = 'https://www.asahi.com/rss/asahi/newsheadlines.rdf';
   try {
     const res = await fetchWithTimeout(url);
     if (!res.ok) return [];
     const xml = await res.text();
-    const items = parseRSSItems(xml);
-
-    return items.slice(0, 8).map((item) => ({
+    return parseRSSItems(xml).slice(0, 8).map((item) => ({
       title: item.title,
       summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
-      // 朝日 RDF の description は空の場合が多いので title でフォールバック
       content: item.description.replace(/<[^>]+>/g, '') || item.title,
       sourceUrl: item.link,
       source: '朝日新聞',
       imageUrl: '',
       publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
       category: mapCategory(item.title),
-      difficulty: 'N2',
+      difficulty: 'N1',
     }));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 function mapCategory(text: string): string {
@@ -173,17 +224,53 @@ function mapCategory(text: string): string {
   return 'general';
 }
 
+// ─── 画像 → OSS 転送 ────────────────────────────────────────────────────────
+
+/**
+ * 下载外部图片，上传到 OSS，返回 OSS URL。
+ * 失败时返回空字符串。
+ */
+async function mirrorImageToOSS(
+  imageUrl: string,
+  articleId: string,
+  oss: OSSService,
+): Promise<string> {
+  try {
+    const res = await fetchWithTimeout(imageUrl, 10000);
+    if (!res.ok) return '';
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const arrayBuf = await res.arrayBuffer();
+    const buf = Buffer.from(arrayBuf);
+    if (buf.length < 1000 || buf.length > 5_000_000) return ''; // 跳过过小/过大
+
+    const ext = contentType.includes('png') ? 'png'
+      : contentType.includes('webp') ? 'webp'
+      : 'jpg';
+    const key = `news/${articleId}.${ext}`;
+    const result = await oss.upload(key, buf, contentType);
+    return result.url;
+  } catch {
+    return '';
+  }
+}
+
 // ─── メインサービス ──────────────────────────────────────────────────────────
 
 export class NewsFetcherService {
-  /** 全ソースから抓取、去重し新規記事を返す */
-  async fetchAll(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ctx: any,
-  ): Promise<{ inserted: number; skipped: number }> {
+  /**
+   * 全ソースから抓取、去重、新規記事は即座に全文+画像を取得して保存。
+   * RSS のリンクは時間が経つと 404 になるため、挿入時に即座にスクレイピング。
+   */
+  /** 内容字数范围：过短无法阅读，过长体验差 */
+  static MIN_CONTENT_LENGTH = 100;
+  static MAX_CONTENT_LENGTH = 2000;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async fetchAll(ctx: any, ossConfig?: OSSConfig): Promise<{ inserted: number; skipped: number; enriched: number }> {
     const results = await Promise.allSettled([
       fetchYahooMain(),
       fetchYahooIT(),
+      fetchNHK(),
       fetchAsahi(),
     ]);
 
@@ -192,33 +279,61 @@ export class NewsFetcherService {
       if (r.status === 'fulfilled') articles.push(...r.value);
     }
 
+    const oss = ossConfig?.accessKeyId ? new OSSService(ossConfig) : null;
     let inserted = 0;
     let skipped = 0;
+    let enriched = 0;
 
     for (const article of articles) {
       if (!article.title || !article.sourceUrl) { skipped++; continue; }
-
-      // 去重：source_url 唯一
       const existing = await ctx.model.News.findOne({ sourceUrl: article.sourceUrl });
       if (existing) { skipped++; continue; }
 
+      const id = uuidv4();
+
+      // 即座にソースページから全文＋OG画像を取得（RSS リンクは短命なので）
+      let content = article.content || article.title;
+      let summary = article.summary || '';
+      let imageUrl = '';
+
+      try {
+        const page = await fetchPageData(article.sourceUrl);
+        if (page.body.length > content.length) {
+          content = page.body;
+          summary = page.body.replace(/\n/g, ' ').slice(0, 200);
+        }
+        if (page.ogImage && oss) {
+          const ossUrl = await mirrorImageToOSS(page.ogImage, id, oss);
+          if (ossUrl) imageUrl = ossUrl;
+        }
+        if (page.body.length > 0 || imageUrl) enriched++;
+      } catch { /* continue with RSS data */ }
+
+      // 质量门控：内容过短或过长的文章直接丢弃
+      if (content.length < NewsFetcherService.MIN_CONTENT_LENGTH
+        || content.length > NewsFetcherService.MAX_CONTENT_LENGTH) {
+        skipped++;
+        continue;
+      }
+
       await ctx.model.News.create({
-        id: uuidv4(),
+        id,
         title: article.title,
-        summary: article.summary || '',
-        content: article.content || article.title,
-        imageUrl: article.imageUrl || '',
+        summary,
+        content,
+        imageUrl,
         source: article.source,
         sourceUrl: article.sourceUrl,
         category: article.category,
         difficulty: article.difficulty,
+        status: 'draft',
         annotations: JSON.stringify({ imageEmoji: categoryEmoji(article.category), paragraphs: [], comments: [] }),
         publishedAt: article.publishedAt,
       });
       inserted++;
     }
 
-    return { inserted, skipped };
+    return { inserted, skipped, enriched };
   }
 }
 

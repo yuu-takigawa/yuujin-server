@@ -1,14 +1,10 @@
 /**
  * NewsAnnotatorService — AI 给新闻添加注释
  *
- * 对 annotations.paragraphs 为空的文章，调用 ProductAI 生成：
- *   - 段落分句
- *   - 每句的 ruby（假名）注音
- *   - 中文翻译
- *   - 语法说明
- *
- * 按用户的 JLPT 等级生成对应难度的注释。
- * 如果 content 为空，先从 sourceUrl 抓取正文。
+ * 按段落生成注释：
+ *   - 将正文按段落组织（每段可含多句）
+ *   - 每段提供 ruby（假名注音）、中文翻译、语法说明
+ *   - 按用户 JLPT 等级生成对应难度的注释
  */
 
 import { productAIChat, ProductAIConfig } from '../../ai/ProductAIService';
@@ -41,13 +37,13 @@ export class NewsAnnotatorService {
     difficulty: string,
     existingAnnotations: NewsAnnotations,
   ): Promise<NewsAnnotations> {
-    if (existingAnnotations.paragraphs.length > 0) {
-      return existingAnnotations; // 已注释过，跳过
+    if (existingAnnotations.paragraphs?.length > 0) {
+      return existingAnnotations;
     }
 
     const text = content || title;
-    // 截取前 500 字（节约 token）
-    const excerpt = text.slice(0, 500);
+    // 截取前 1500 字（给 AI 足够上下文）
+    const excerpt = text.slice(0, 1500);
 
     const levelNote: Record<string, string> = {
       none: 'N5初心者向け（ひらがな多用、超簡単な説明）',
@@ -63,28 +59,31 @@ export class NewsAnnotatorService {
     const systemPrompt = `あなたは日本語学習者向けのニュース注釈AIです。${note}`;
 
     const userPrompt = `
-以下のニュース本文を分析して、日本語学習者向けの注釈を作成してください。
+以下のニュース本文を段落ごとに分析して、日本語学習者向けの注釈を作成してください。
 
 タイトル: ${title}
-本文（抜粋）: ${excerpt}
+本文: ${excerpt}
 
-以下のJSON形式で返してください（段落は最大4つ）:
+以下のJSON形式で返してください:
 {
   "paragraphs": [
     {
       "id": "p1",
-      "text": "文の一部または1文",
+      "text": "段落全体のテキスト（複数の文を含んでもよい）",
       "ruby": [["漢字", "よみかた"], ...],
-      "translation": "中文翻译",
-      "explanation": "この文のポイントとなる文法・語彙の説明（50字以内）"
+      "translation": "这一整段的中文翻译",
+      "explanation": "この段落のポイントとなる文法・語彙の説明"
     }
   ]
 }
 
-注意:
-- text は元のニュース本文から取る（改変しない）
-- ruby は難しい漢字のみ（簡単な字は省略可）
-- explanation は ${difficulty} レベルに合わせる
+重要なルール:
+- 段落単位でまとめる（1段落 = 2〜4文程度が目安）
+- text は元のニュース本文からそのまま取る（改変しない）
+- 本文全体をカバーする（省略しない）
+- ruby は段落内の難しい漢字のみ
+- translation は段落全体の中文翻译
+- explanation は ${difficulty} レベルに合わせた文法・語彙の解説（100字以内）
 - JSONのみ返す`.trim();
 
     try {

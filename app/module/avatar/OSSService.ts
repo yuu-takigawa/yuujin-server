@@ -44,7 +44,7 @@ export class OSSService {
       contentMd5,
       contentType,
       date,
-      `/${bucket}/${key}`,
+      `x-oss-object-acl:public-read\n/${bucket}/${key}`,
     ].join('\n');
 
     const signature = crypto

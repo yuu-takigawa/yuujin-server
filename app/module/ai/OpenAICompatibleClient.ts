@@ -39,6 +39,7 @@ export class OpenAICompatibleClient implements AIClient {
         messages: apiMessages,
         stream: true,
         max_tokens: 2048,
+        enable_thinking: false,
       }),
     });
 

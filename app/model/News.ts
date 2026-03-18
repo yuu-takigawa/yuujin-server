@@ -33,6 +33,9 @@ export default class News extends Bone {
   @Column({ type: DataTypes.JSON })
   annotations!: object;
 
+  @Column({ defaultValue: 'draft' })
+  status!: string;
+
   @Column({ name: 'published_at' })
   publishedAt!: Date;
 

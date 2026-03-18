@@ -2,10 +2,10 @@
  * news-fetcher — 每小时自动抓取日本新闻并 AI 注释
  *
  * 流程:
- *   1. 从 NHK Web Easy / NHK News / 朝日新聞 抓取最新文章
- *   2. 去重（source_url）后写入 news 表
- *   3. 对无注释文章逐篇调用 ProductAI 生成注释
- *   4. 清理 7 天前的旧文章（保持数据库整洁）
+ *   1. 从 Yahoo!/NHK/朝日 抓取最新文章，去重后写入 news 表（status=draft）
+ *   2. 对 draft 文章逐篇调用 ProductAI 生成注释
+ *   3. 注释完成且质量达标的文章标记为 published，用户才能看到
+ *   4. 清理 1 年前的旧文章
  */
 
 import { Subscription } from 'egg';
@@ -31,19 +31,20 @@ export default class NewsFetcher extends Subscription {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const bizConfig = (ctx.app.config as any).bizConfig;
     const aiConfig: ProductAIConfig = bizConfig?.productAi;
+    const ossConfig = bizConfig?.oss;
 
-    // 1. 抓取新文章
+    // 1. 抓取新文章（含即时全文抓取 + 图片转存 OSS），status=draft
     const fetcher = new NewsFetcherService();
-    const { inserted, skipped } = await fetcher.fetchAll(ctx);
-    ctx.logger.info(`[NewsFetcher] Fetched: +${inserted} new, ${skipped} skipped`);
+    const { inserted, skipped, enriched } = await fetcher.fetchAll(ctx, ossConfig);
+    ctx.logger.info(`[NewsFetcher] Fetched: +${inserted} new (${enriched} enriched), ${skipped} skipped`);
 
-    // 2. 对无注释文章生成 AI 注释（每次最多处理 5 篇，避免超时）
+    // 2. 对 draft 文章生成 AI 注释，成功后标记为 published（每次最多 5 篇）
     if (aiConfig) {
       const annotator = new NewsAnnotatorService(aiConfig);
-      const unannotated = await ctx.model.News.find({}).limit(20);
+      const drafts = await ctx.model.News.find({ status: 'draft' }).limit(20);
 
       let annotated = 0;
-      for (const row of unannotated as unknown[]) {
+      for (const row of drafts as unknown[]) {
         if (annotated >= 5) break;
         const article = boneData(row);
 
@@ -56,7 +57,14 @@ export default class NewsFetcher extends Subscription {
           existing = { imageEmoji: '📰', paragraphs: [], comments: [] };
         }
 
-        if (existing.paragraphs?.length > 0) continue; // 已有注释，跳过
+        if (existing.paragraphs?.length > 0) {
+          // 已有注释但还是 draft（可能上次标记失败），直接发布
+          await ctx.model.News.update(
+            { id: article.id },
+            { status: 'published' },
+          );
+          continue;
+        }
 
         const updated = await annotator.annotate(
           article.title as string,
@@ -65,19 +73,20 @@ export default class NewsFetcher extends Subscription {
           existing,
         );
 
-        if (updated.paragraphs.length > 0) {
+        if (updated.paragraphs?.length > 0) {
+          // 注释成功 → 保存注释 + 标记为 published
           await ctx.model.News.update(
             { id: article.id },
-            { annotations: JSON.stringify(updated) },
+            { annotations: JSON.stringify(updated), status: 'published' },
           );
           annotated++;
         }
       }
-      ctx.logger.info(`[NewsFetcher] Annotated ${annotated} articles`);
+      ctx.logger.info(`[NewsFetcher] Annotated & published ${annotated} articles`);
     }
 
-    // 3. 清理 7 天前的旧文章
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600000);
-    await ctx.model.News.remove({ publishedAt: { $lt: sevenDaysAgo } });
+    // 3. 清理 1 年前的旧文章
+    const oneYearAgo = new Date(Date.now() - 365 * 24 * 3600000);
+    await ctx.model.News.remove({ publishedAt: { $lt: oneYearAgo } });
   }
 }

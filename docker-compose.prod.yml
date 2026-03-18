@@ -24,9 +24,18 @@ services:
       - CLAUDE_API_KEY=${CLAUDE_API_KEY:-}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-haiku-4-5-20251001}
       - QIANWEN_API_KEY=${QIANWEN_API_KEY:-}
+      - QIANWEN_MODEL=${QIANWEN_MODEL:-qwen-plus}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
       - ERNIE_API_KEY=${ERNIE_API_KEY:-}
       - ERNIE_MODEL=${ERNIE_MODEL:-ernie-speed}
+      - PRODUCT_AI_PROVIDER=${PRODUCT_AI_PROVIDER:-qianwen}
+      - PRODUCT_QIANWEN_MODEL=${PRODUCT_QIANWEN_MODEL:-qwen3.5-plus}
+      - OSS_BUCKET=${OSS_BUCKET:-yuujin-assets}
+      - OSS_REGION=${OSS_REGION:-oss-cn-hangzhou}
+      - OSS_CDN_DOMAIN=${OSS_CDN_DOMAIN:-}
+      - OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID:-}
+      - OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET:-}
     depends_on:
       mysql:
         condition: service_healthy

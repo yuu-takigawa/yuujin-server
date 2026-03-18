@@ -87,11 +87,13 @@ CREATE TABLE IF NOT EXISTS news (
   category VARCHAR(50) DEFAULT 'general',
   difficulty VARCHAR(10) DEFAULT 'N5',
   annotations JSON,
+  status VARCHAR(20) NOT NULL DEFAULT 'draft',
   published_at DATETIME,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_category (category),
   INDEX idx_difficulty (difficulty),
-  INDEX idx_published_at (published_at)
+  INDEX idx_published_at (published_at),
+  INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS news_reads (
