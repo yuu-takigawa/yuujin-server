@@ -123,6 +123,9 @@ const GARBAGE_PATTERNS = [
   /^提供[:：]/,
   /^配信[:：]/,
   /^最終更新[:：]/,
+  /みんなの意見/,
+  /※\s*統計に基づく/,
+  /^.{0,30}に期待することは/,
 ];
 
 function isGarbageText(text: string): boolean {
