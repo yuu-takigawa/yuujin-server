@@ -87,8 +87,43 @@ interface PageData {
   ogImage: string;  // og:image URL
 }
 
+/** 非正文パターン — ナビ、広告、シェアボタン等 */
+const GARBAGE_PATTERNS = [
+  /console\.log/,
+  /googletag/,
+  /JavaScript.*無効/,
+  /JavaScriptの設定を/,
+  /マイページ購入履歴/,
+  /メールでシェアする/,
+  /Facebookでシェアする/,
+  /Xでシェアする/,
+  /はてなブックマーク/,
+  /シェアする.*シェアする/,
+  /ランキング有料主要国内/,
+  /トップ速報ライブ/,
+  /購入履歴トップ/,
+  /cookie/i,
+  /プライバシーポリシー.*利用規約/,
+  /^\[?PR\]?$/,
+  /無断転載禁止/,
+  /All Rights Reserved/i,
+  /著作権.*帰属/,
+  /記事についての報告/,
+  /おすすめ記事/,
+  /関連ニュース/,
+  /もっと見る/,
+  /^写真[:：]|^出典[:：]/,
+  /ログイン.*新規登録/,
+  /アプリで開く/,
+];
+
+function isGarbageText(text: string): boolean {
+  return GARBAGE_PATTERNS.some(re => re.test(text));
+}
+
 /**
  * 从源 URL 抓取网页，一次性提取正文和 OG 图片。
+ * 优先从 <article> 标签提取正文，过滤掉导航/广告/脚本等。
  */
 async function fetchPageData(url: string): Promise<PageData> {
   try {
@@ -109,17 +144,33 @@ async function fetchPageData(url: string): Promise<PageData> {
     }
 
     // --- 正文提取 ---
+    // 1) 去掉 script / style / nav / footer / header / aside / noscript
+    let cleaned = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+      .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+      .replace(/<header[\s\S]*?<\/header>/gi, '')
+      .replace(/<aside[\s\S]*?<\/aside>/gi, '')
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
+      .replace(/<!--[\s\S]*?-->/g, '');
+
+    // 2) 优先从 <article> 标签内提取（大多数新闻站点都用 <article>）
+    const articleMatch = cleaned.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+    const contentHtml = articleMatch ? articleMatch[1] : cleaned;
+
+    // 3) 提取 <p> 标签，过滤垃圾文本
     const paragraphs: string[] = [];
     const pRegex = /<p[^>]*>([\s\S]*?)<\/p>/gi;
     let m: RegExpExecArray | null;
-    while ((m = pRegex.exec(html)) !== null) {
+    while ((m = pRegex.exec(contentHtml)) !== null) {
       const text = m[1]
         .replace(/<[^>]+>/g, '')
         .replace(/&[a-z]+;/gi, ' ')
         .replace(/&#\d+;/g, '')
         .replace(/\s+/g, ' ')
         .trim();
-      if (text.length >= 15) paragraphs.push(text);
+      if (text.length >= 15 && !isGarbageText(text)) paragraphs.push(text);
     }
     const body = paragraphs.join('\n');
 
