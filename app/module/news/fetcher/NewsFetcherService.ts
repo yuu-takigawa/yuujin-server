@@ -2,11 +2,14 @@
  * NewsFetcherService — 自动抓取日本新闻
  *
  * 来源:
- *   1. NHK Web Easy（やさしい日本語）- 最适合日语学习
- *   2. NHK News RSS
- *   3. 朝日新聞 RSS
+ *   1. Yahoo! ニュース 主要（N4 — 学習者向け短文見出し）
+ *   2. Yahoo! ニュース IT/テクノロジー（N3）
+ *   3. 朝日新聞 RSS（N2）
  *
- * 流程: 抓取 → XML/JSON 解析 → 去重（source_url）→ 存 DB → 触发 AI 注释
+ * 注：NHK Web Easy は 2025 年以降認証必須になり ECS からアクセス不可のため
+ *     Yahoo Japan に切り替え。
+ *
+ * 流程: 抓取 → XML 解析 → 去重（source_url）→ 存 DB → 触发 AI 注释
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -23,7 +26,7 @@ export interface RawArticle {
   difficulty: string;
 }
 
-// ─── RSS XML 简单解析器（无外部依赖）─────────────────────────────────────────
+// ─── RSS/RDF XML パーサー（外部依存なし）──────────────────────────────────────
 
 function extractTag(xml: string, tag: string): string {
   const patterns = [
@@ -37,21 +40,27 @@ function extractTag(xml: string, tag: string): string {
   return '';
 }
 
+/**
+ * RSS 2.0（<item>）と RDF 1.0（<item rdf:about="...">）両方に対応
+ */
 function parseRSSItems(xml: string): Array<{
   title: string; link: string; description: string;
   pubDate: string; enclosure: string; category: string;
 }> {
   const items: ReturnType<typeof parseRSSItems> = [];
-  const itemRe = /<item>([\s\S]*?)<\/item>/gi;
+  // <item> or <item rdf:about="..."> both matched by [^>]*
+  const itemRe = /<item[^>]*>([\s\S]*?)<\/item>/gi;
   let match: RegExpExecArray | null;
   while ((match = itemRe.exec(xml)) !== null) {
     const block = match[1];
     const enclosureMatch = block.match(/<enclosure[^>]+url="([^"]+)"/i);
+    // dc:date fallback for RDF feeds
+    const pubDate = extractTag(block, 'pubDate') || extractTag(block, 'dc:date');
     items.push({
       title: extractTag(block, 'title'),
       link: extractTag(block, 'link'),
-      description: extractTag(block, 'description'),
-      pubDate: extractTag(block, 'pubDate'),
+      description: extractTag(block, 'description') || extractTag(block, 'content:encoded'),
+      pubDate,
       enclosure: enclosureMatch?.[1] || '',
       category: extractTag(block, 'category'),
     });
@@ -59,9 +68,9 @@ function parseRSSItems(xml: string): Array<{
   return items;
 }
 
-// ─── 各来源抓取逻辑 ────────────────────────────────────────────────────────────
+// ─── 各ソース抓取ロジック ──────────────────────────────────────────────────────
 
-async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 12000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -75,9 +84,9 @@ async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Respons
   }
 }
 
-/** NHK Web Easy — N4~N5 级别，最适合学习 */
-async function fetchNHKWebEasy(): Promise<RawArticle[]> {
-  const url = 'https://www3.nhk.or.jp/news/easy/k10_news_easy_all.xml';
+/** Yahoo! ニュース 主要トピック — N4 学習者向け */
+async function fetchYahooMain(): Promise<RawArticle[]> {
+  const url = 'https://news.yahoo.co.jp/rss/topics/top-picks.xml';
   try {
     const res = await fetchWithTimeout(url);
     if (!res.ok) return [];
@@ -87,9 +96,9 @@ async function fetchNHKWebEasy(): Promise<RawArticle[]> {
     return items.slice(0, 10).map((item) => ({
       title: item.title,
       summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
-      content: item.description.replace(/<[^>]+>/g, ''),
+      content: item.description.replace(/<[^>]+>/g, '') || item.title,
       sourceUrl: item.link,
-      source: 'NHK Web Easy',
+      source: 'Yahoo!ニュース',
       imageUrl: item.enclosure || '',
       publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
       category: mapCategory(item.category || item.title),
@@ -100,41 +109,32 @@ async function fetchNHKWebEasy(): Promise<RawArticle[]> {
   }
 }
 
-/** NHK News（标准日语）— N3~N2 级别 */
-async function fetchNHKNews(): Promise<RawArticle[]> {
-  // NHK provides JSON feeds per category
-  const feeds = [
-    { url: 'https://www3.nhk.or.jp/news/json16/category/all.json', label: 'NHK News' },
-  ];
+/** Yahoo! ニュース IT — N3 */
+async function fetchYahooIT(): Promise<RawArticle[]> {
+  const url = 'https://news.yahoo.co.jp/rss/topics/it.xml';
+  try {
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const items = parseRSSItems(xml);
 
-  const articles: RawArticle[] = [];
-  for (const feed of feeds) {
-    try {
-      const res = await fetchWithTimeout(feed.url);
-      if (!res.ok) continue;
-      const text = await res.text();
-      // NHK News JSON format: { channel: { item: [...] } }
-      const json = JSON.parse(text.replace(/^[^{]*{/, '{').replace(/}[^}]*$/, '}'));
-      const items = json?.channel?.item || [];
-      for (const item of items.slice(0, 8)) {
-        articles.push({
-          title: item.title || '',
-          summary: (item.description || '').replace(/<[^>]+>/g, '').slice(0, 200),
-          content: (item.description || '').replace(/<[^>]+>/g, ''),
-          sourceUrl: item.link || '',
-          source: feed.label,
-          imageUrl: item['media:thumbnail']?.['@url'] || '',
-          publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
-          category: mapCategory(item.title || ''),
-          difficulty: 'N3',
-        });
-      }
-    } catch { /* ignore per-feed errors */ }
+    return items.slice(0, 8).map((item) => ({
+      title: item.title,
+      summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
+      content: item.description.replace(/<[^>]+>/g, '') || item.title,
+      sourceUrl: item.link,
+      source: 'Yahoo!ニュース IT',
+      imageUrl: item.enclosure || '',
+      publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
+      category: 'technology',
+      difficulty: 'N3',
+    }));
+  } catch {
+    return [];
   }
-  return articles;
 }
 
-/** 朝日新聞 RSS — N2~N1 级别 */
+/** 朝日新聞 RDF — N2 */
 async function fetchAsahi(): Promise<RawArticle[]> {
   const url = 'https://www.asahi.com/rss/asahi/newsheadlines.rdf';
   try {
@@ -146,7 +146,8 @@ async function fetchAsahi(): Promise<RawArticle[]> {
     return items.slice(0, 8).map((item) => ({
       title: item.title,
       summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
-      content: item.description.replace(/<[^>]+>/g, ''),
+      // 朝日 RDF の description は空の場合が多いので title でフォールバック
+      content: item.description.replace(/<[^>]+>/g, '') || item.title,
       sourceUrl: item.link,
       source: '朝日新聞',
       imageUrl: '',
@@ -160,11 +161,10 @@ async function fetchAsahi(): Promise<RawArticle[]> {
 }
 
 function mapCategory(text: string): string {
-  const t = text.toLowerCase();
   if (/政治|選挙|国会|政府/.test(text)) return 'politics';
   if (/経済|株|企業|ビジネス/.test(text)) return 'business';
-  if (/テクノロジー|AI|科学|技術|宇宙/.test(text)) return 'technology';
-  if (/スポーツ|野球|サッカー|オリンピック/.test(t)) return 'sports';
+  if (/テクノロジー|AI|科学|技術|宇宙|IT/.test(text)) return 'technology';
+  if (/スポーツ|野球|サッカー|オリンピック/i.test(text)) return 'sports';
   if (/文化|芸術|映画|音楽|アニメ/.test(text)) return 'culture';
   if (/旅行|観光|グルメ|食/.test(text)) return 'travel';
   if (/国際|世界|海外/.test(text)) return 'international';
@@ -173,17 +173,17 @@ function mapCategory(text: string): string {
   return 'general';
 }
 
-// ─── 主服务 ─────────────────────────────────────────────────────────────────
+// ─── メインサービス ──────────────────────────────────────────────────────────
 
 export class NewsFetcherService {
-  /** 从所有来源抓取，去重并返回新文章 */
+  /** 全ソースから抓取、去重し新規記事を返す */
   async fetchAll(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ctx: any,
   ): Promise<{ inserted: number; skipped: number }> {
     const results = await Promise.allSettled([
-      fetchNHKWebEasy(),
-      fetchNHKNews(),
+      fetchYahooMain(),
+      fetchYahooIT(),
       fetchAsahi(),
     ]);
 
@@ -205,9 +205,9 @@ export class NewsFetcherService {
       await ctx.model.News.create({
         id: uuidv4(),
         title: article.title,
-        summary: article.summary,
-        content: article.content,
-        imageUrl: article.imageUrl,
+        summary: article.summary || '',
+        content: article.content || article.title,
+        imageUrl: article.imageUrl || '',
         source: article.source,
         sourceUrl: article.sourceUrl,
         category: article.category,
