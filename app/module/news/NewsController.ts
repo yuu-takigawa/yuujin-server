@@ -25,10 +25,11 @@ export class NewsController {
     const eggCtx = ctx as unknown as EggCtx;
     const query = eggCtx.query as Record<string, string>;
 
-    const articles = await this.newsService.list(eggCtx, {
+    const { articles, hasMore } = await this.newsService.list(eggCtx, {
       category: query.category,
       difficulty: query.difficulty,
       limit: query.limit ? parseInt(query.limit) : undefined,
+      offset: query.offset ? parseInt(query.offset) : undefined,
     });
 
     // Optionally include read status for authenticated user
@@ -44,7 +45,7 @@ export class NewsController {
       isRead: !!readMap[a.id as string],
     }));
 
-    return { success: true, data: result };
+    return { success: true, data: { articles: result, hasMore } };
   }
 
   @HTTPMethod({

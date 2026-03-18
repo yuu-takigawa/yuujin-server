@@ -126,6 +126,26 @@ const GARBAGE_PATTERNS = [
   /みんなの意見/,
   /※\s*統計に基づく/,
   /^.{0,30}に期待することは/,
+  /PR\s*TIMES/i,
+  /プレスリリース/,
+  /^広告$/,
+  /^AD$/i,
+  /^sponsored/i,
+  /^PR$/,
+  /記事提供[:：]/,
+  /外部サイト/,
+  /^この記事は.*提供/,
+  /^©\s*\d{4}/,
+  /copyright/i,
+  /^photo\s*:/i,
+  /^画像[:：]/,
+  /転載.*禁止/,
+  /^元記事/,
+  /続きを読む/,
+  /^購読/,
+  /メルマガ/,
+  /^キーワード[:：]/,
+  /^タグ[:：]/,
 ];
 
 function isGarbageText(text: string): boolean {
@@ -183,6 +203,18 @@ async function fetchPageData(url: string): Promise<PageData> {
         .trim();
       if (text.length >= 15 && !isGarbageText(text)) paragraphs.push(text);
     }
+
+    // 末尾短广告段落清洗：从尾部移除 <40 字且含广告/版权关键词的段落
+    const tailGarbageRe = /PR|広告|配信|©|copyright|提供|転載|All Rights Reserved|プレスリリース/i;
+    while (paragraphs.length > 0) {
+      const last = paragraphs[paragraphs.length - 1];
+      if (last.length < 40 && tailGarbageRe.test(last)) {
+        paragraphs.pop();
+      } else {
+        break;
+      }
+    }
+
     const body = paragraphs.join('\n');
 
     return { body, ogImage };
@@ -325,7 +357,7 @@ export class NewsFetcherService {
    */
   /** 内容字数范围：过短无法阅读，过长体验差 */
   static MIN_CONTENT_LENGTH = 100;
-  static MAX_CONTENT_LENGTH = 2000;
+  static MAX_CONTENT_LENGTH = 5000;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async fetchAll(ctx: any, ossConfig?: OSSConfig): Promise<{ inserted: number; skipped: number; enriched: number }> {

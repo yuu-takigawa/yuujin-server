@@ -13,17 +13,22 @@ function boneData(bone: Record<string, unknown>): Record<string, unknown> {
   accessLevel: AccessLevel.PUBLIC,
 })
 export class NewsService {
-  async list(ctx: Context, options?: { category?: string; difficulty?: string; limit?: number }) {
+  async list(ctx: Context, options?: { category?: string; difficulty?: string; limit?: number; offset?: number }) {
     const limit = options?.limit || 20;
+    const offset = options?.offset || 0;
     let query: Record<string, unknown> = { status: 'published' };
     if (options?.category) query.category = options.category;
     if (options?.difficulty) query.difficulty = options.difficulty;
 
     const articles = await ctx.model.News.find(query)
       .order('published_at DESC')
-      .limit(limit);
+      .offset(offset)
+      .limit(limit + 1); // 多取一条用于判断 hasMore
 
-    return articles.map((a: Record<string, unknown>) => {
+    const hasMore = articles.length > limit;
+    const sliced = hasMore ? articles.slice(0, limit) : articles;
+
+    const mapped = sliced.map((a: Record<string, unknown>) => {
       const data = boneData(a);
       // Parse annotations JSON if stored as string
       if (typeof data.annotations === 'string') {
@@ -31,6 +36,8 @@ export class NewsService {
       }
       return data;
     });
+
+    return { articles: mapped, hasMore };
   }
 
   async getById(ctx: Context, id: string) {

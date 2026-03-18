@@ -42,49 +42,49 @@ export class NewsAnnotatorService {
     }
 
     const text = content || title;
-    // 截取前 1500 字（给 AI 足够上下文）
-    const excerpt = text.slice(0, 1500);
+    // 截取前 4000 字（给 AI 足够上下文，避免长文被截断）
+    const excerpt = text.slice(0, 4000);
 
     const levelNote: Record<string, string> = {
-      none: 'N5初心者向け（ひらがな多用、超簡単な説明）',
-      N5: 'N5レベル（基本語彙のみ、短い説明）',
-      N4: 'N4レベル（日常語彙、簡単な文法説明）',
-      N3: 'N3レベル（自然な表現、少し詳しい説明）',
-      N2: 'N2レベル（複雑な表現OK、簡潔な説明）',
-      N1: 'N1・ネイティブ向け（高度な語彙、詳細な説明不要）',
-      native: 'ネイティブ向け（説明不要、訳も不要）',
+      none: '面向N5初学者（多用平假名，用最简单的中文解释）',
+      N5: '面向N5水平学习者（仅基础词汇，简短的中文说明）',
+      N4: '面向N4水平学习者（日常词汇，简单的语法说明）',
+      N3: '面向N3水平学习者（较自然的表达，稍详细的说明）',
+      N2: '面向N2水平学习者（可包含复杂表达，简明的说明）',
+      N1: '面向N1及母语水平学习者（高级词汇，简要说明即可）',
+      native: '面向母语水平读者（无需详细解释）',
     };
     const note = levelNote[difficulty] || levelNote['N4'];
 
-    const systemPrompt = `あなたは日本語学習者向けのニュース注釈AIです。${note}`;
+    const systemPrompt = `你是一个面向中国日语学习者的新闻注释AI。${note}。请全程使用中文撰写explanation字段。`;
 
     const userPrompt = `
-以下のニュース本文を段落ごとに分析して、日本語学習者向けの注釈を作成してください。
+请将以下日语新闻正文按段落逐段分析，为中国日语学习者生成注释。
 
-タイトル: ${title}
-本文: ${excerpt}
+标题: ${title}
+正文: ${excerpt}
 
-以下のJSON形式で返してください:
+请严格按以下JSON格式返回:
 {
   "paragraphs": [
     {
       "id": "p1",
-      "text": "段落全体のテキスト（複数の文を含んでもよい）",
+      "text": "段落原文（可包含多句，直接从原文复制，不要改动）",
       "ruby": [["漢字", "よみかた"], ...],
-      "translation": "这一整段的中文翻译",
-      "explanation": "この段落のポイントとなる文法・語彙の説明"
+      "translation": "该段落的完整中文翻译",
+      "explanation": "用中文撰写，200字以内，详细说明该段中重要语法结构、关键词汇的含义和用法"
     }
   ]
 }
 
-重要なルール:
-- 段落単位でまとめる（1段落 = 2〜4文程度が目安）
-- text は元のニュース本文からそのまま取る（改変しない）
-- 本文全体をカバーする（省略しない）
-- ruby は段落内の難しい漢字のみ
-- translation は段落全体の中文翻译
-- explanation は ${difficulty} レベルに合わせた文法・語彙の解説（100字以内）
-- JSONのみ返す`.trim();
+重要规则:
+- 按段落整理（每段约2~4句）
+- text 必须从原文直接复制，不得改动
+- 必须覆盖全文，不得省略
+- ruby 仅标注段落内较难的汉字读音
+- translation 是该段落的完整中文翻译
+- explanation 用中文撰写，200字以内，针对${difficulty}水平详细解说语法结构和关键词汇
+- 仅返回JSON，不要附加其他内容`.trim();
 
     try {
       const response = await productAIChat(
