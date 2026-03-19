@@ -53,9 +53,9 @@ function generateFuriganaInWorker(
 
 export default class NewsFetcher extends Subscription {
   static schedule = {
-    cron: '0 */2 * * *', // 每 2 小时
+    cron: '0 * * * *', // 每 1 小时
     type: 'worker',
-    immediate: true,      // 启动时立即运行一次
+    immediate: true,    // 启动时立即运行一次
   };
 
   async subscribe() {
@@ -70,9 +70,32 @@ export default class NewsFetcher extends Subscription {
     ctx.logger.info(`[NewsFetcher] Fetched: +${inserted} new (${enriched} enriched), ${skipped} skipped`);
 
     // 2. 选 1 篇有封面图的 draft → 图片审核 → 发布
+    //    优先发布今天更新不足 2 篇的频道
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayPublished = await ctx.model.News.find({
+      status: 'published',
+      publishedAt: { $gt: todayStart },
+    });
+    const categoryCounts: Record<string, number> = {};
+    for (const row of todayPublished as unknown[]) {
+      const cat = (boneData(row).category as string) || '';
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+    }
+    const MIN_PER_DAY = 2;
+    const allCategories = ['ai', 'music', 'comic', 'tech', 'lifestyle'];
+    const needyCategories = allCategories.filter(c => (categoryCounts[c] || 0) < MIN_PER_DAY);
+
     const drafts = await ctx.model.News.find({ status: 'draft' })
       .order('published_at DESC')
-      .limit(10);
+      .limit(20);
+
+    // 排序：优先需要更新的频道
+    const sortedDrafts = (drafts as unknown[]).map(boneData).sort((a, b) => {
+      const aN = needyCategories.includes(a.category as string) ? 0 : 1;
+      const bN = needyCategories.includes(b.category as string) ? 0 : 1;
+      return aN - bN;
+    });
 
     let published = 0;
     const moderator = new ContentModerationService({
@@ -80,9 +103,8 @@ export default class NewsFetcher extends Subscription {
       accessKeySecret: ossConfig?.accessKeySecret || '',
     });
 
-    for (const row of drafts as unknown[]) {
+    for (const article of sortedDrafts) {
       if (published >= 1) break;
-      const article = boneData(row);
       const imageUrl = article.imageUrl as string;
 
       // 无封面图的文章跳过

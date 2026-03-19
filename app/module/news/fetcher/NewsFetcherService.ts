@@ -127,8 +127,19 @@ const TITLE_BLACKLIST = [
   /震度[5-7]/, /津波警報/, /大規模噴火/,
 ];
 
+/** 低信息量标题（列表、排行、速报等）*/
+const LOW_QUALITY_TITLE = [
+  /本日発売の.*リスト/,
+  /ランキング.*位/,
+  /まとめ$/,
+  /一覧$/,
+  /速報$/,
+  /^\[PR\]/,
+];
+
 function isTitleBlacklisted(title: string): boolean {
-  return TITLE_BLACKLIST.some(re => re.test(title));
+  return TITLE_BLACKLIST.some(re => re.test(title))
+    || LOW_QUALITY_TITLE.some(re => re.test(title));
 }
 
 // ─── 源ページ解析（全文 + OG画像を1回の fetch で取得）─────────────────────────
@@ -257,7 +268,76 @@ async function fetchPageData(url: string): Promise<PageData> {
       }
     }
 
-    return { body: paragraphs.join('\n'), ogImage };
+    // --- 段落内英文/URL 清洗 ---
+    for (let i = paragraphs.length - 1; i >= 0; i--) {
+      // 去掉含 URL 的段落
+      if (/https?:\/\//.test(paragraphs[i])) {
+        paragraphs[i] = paragraphs[i].replace(/https?:\/\/\S+/g, '').trim();
+        if (paragraphs[i].length < 15) { paragraphs.splice(i, 1); continue; }
+      }
+      // 去掉英文占比过高的段落（>50% ASCII 字符 = 大概率是代码/链接/版权）
+      const asciiCount = (paragraphs[i].match(/[a-zA-Z0-9]/g) || []).length;
+      if (asciiCount > paragraphs[i].length * 0.5 && paragraphs[i].length > 30) {
+        paragraphs.splice(i, 1);
+        continue;
+      }
+    }
+
+    // --- 过长段落分段（按句号分割，每段目标2-4句）---
+    const splitParagraphs: string[] = [];
+    for (const para of paragraphs) {
+      if (para.length <= 150) {
+        splitParagraphs.push(para);
+        continue;
+      }
+      // 按日文句号分割
+      const sentences = para.split(/(?<=。)/).filter(s => s.trim().length > 0);
+      if (sentences.length <= 2) {
+        splitParagraphs.push(para);
+        continue;
+      }
+      let chunk = '';
+      let sentCount = 0;
+      for (const sent of sentences) {
+        chunk += sent;
+        sentCount++;
+        if (sentCount >= 3 || chunk.length >= 120) {
+          splitParagraphs.push(chunk.trim());
+          chunk = '';
+          sentCount = 0;
+        }
+      }
+      if (chunk.trim()) splitParagraphs.push(chunk.trim());
+    }
+
+    // --- 合并过短段落（连续短行合并）---
+    const mergedParagraphs: string[] = [];
+    let buffer = '';
+    for (const para of splitParagraphs) {
+      if (para.length < 30) {
+        buffer += (buffer ? '' : '') + para;
+      } else {
+        if (buffer) {
+          // 短行 buffer 附加到当前段落前面
+          mergedParagraphs.push(buffer + para);
+          buffer = '';
+        } else {
+          mergedParagraphs.push(para);
+        }
+      }
+    }
+    if (buffer) mergedParagraphs.push(buffer);
+
+    // --- 无句号段落补句号 ---
+    for (let i = 0; i < mergedParagraphs.length; i++) {
+      const p = mergedParagraphs[i];
+      const lastChar = p[p.length - 1];
+      if (lastChar && !/[。！？!?」）\)]/.test(lastChar)) {
+        mergedParagraphs[i] = p + '。';
+      }
+    }
+
+    return { body: mergedParagraphs.join('\n'), ogImage };
   } catch {
     return { body: '', ogImage: '' };
   }
