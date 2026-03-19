@@ -146,6 +146,20 @@ const GARBAGE_PATTERNS = [
   /メルマガ/,
   /^キーワード[:：]/,
   /^タグ[:：]/,
+  /有料会員/,
+  /有料記事/,
+  /会員限定/,
+  /月額.*円/,
+  /無料会員登録/,
+  /プレミアム/,
+  /サブスクリプション/,
+  /^この記事は有料/,
+  /残り\d+文字/,
+  /全文を読む/,
+  /続きは有料/,
+  /ここから先は/,
+  /^ログインして/,
+  /会員登録すると/,
 ];
 
 function isGarbageText(text: string): boolean {
@@ -204,11 +218,11 @@ async function fetchPageData(url: string): Promise<PageData> {
       if (text.length >= 15 && !isGarbageText(text)) paragraphs.push(text);
     }
 
-    // 末尾短广告段落清洗：从尾部移除 <40 字且含广告/版权关键词的段落
-    const tailGarbageRe = /PR|広告|配信|©|copyright|提供|転載|All Rights Reserved|プレスリリース/i;
+    // 末尾广告段落清洗：从尾部移除含广告/版权/付费墙关键词的段落
+    const tailGarbageRe = /PR|広告|配信|©|copyright|提供|転載|All Rights Reserved|プレスリリース|有料会員|有料記事|会員限定|残り\d+文字|全文を読む|続きは有料|ここから先は|無料会員登録|月額.*円/i;
     while (paragraphs.length > 0) {
       const last = paragraphs[paragraphs.length - 1];
-      if (last.length < 40 && tailGarbageRe.test(last)) {
+      if (last.length < 80 && tailGarbageRe.test(last)) {
         paragraphs.pop();
       } else {
         break;
