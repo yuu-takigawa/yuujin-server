@@ -1,14 +1,15 @@
 /**
  * NewsFetcherService — 自动抓取日本新闻
  *
- * 来源:
- *   1. Yahoo! ニュース 主要（N4 — 学習者向け短文見出し）
- *   2. Yahoo! ニュース IT/テクノロジー（N3）
- *   3. NHK ニュース RSS（N2 — 标准新闻）
- *   4. 朝日新聞 RDF（N1 — 高级新闻）
+ * 来源（5 垂直源，不含综合/社会/政治新闻）:
+ *   1. ITmedia AI+（AI・IT 话题）
+ *   2. ナタリー 音楽（音乐新闻）
+ *   3. ナタリー コミック（漫画・动画新闻）
+ *   4. Gizmodo Japan（科技・数码）
+ *   5. Lifehacker Japan（生活技巧）
  *
  * 流程:
- *   抓取 RSS → 去重 → 存 DB → 抓源 URL 全文+OG 图 → 图片转存 OSS → 更新 DB
+ *   抓取 RSS/Atom → 去重 → 标题黑名单过滤 → 全文+OG 图 → 图片转存 OSS → 存 DB
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -23,10 +24,9 @@ export interface RawArticle {
   imageUrl: string;
   publishedAt: Date;
   category: string;
-  difficulty: string;
 }
 
-// ─── RSS/RDF XML パーサー（外部依存なし）──────────────────────────────────────
+// ─── RSS/RDF/Atom XML パーサー ──────────────────────────────────────
 
 function extractTag(xml: string, tag: string): string {
   const patterns = [
@@ -40,11 +40,14 @@ function extractTag(xml: string, tag: string): string {
   return '';
 }
 
-function parseRSSItems(xml: string): Array<{
+interface FeedItem {
   title: string; link: string; description: string;
   pubDate: string; enclosure: string; category: string;
-}> {
-  const items: ReturnType<typeof parseRSSItems> = [];
+}
+
+/** RSS 2.0 / RDF 1.0 parser */
+function parseRSSItems(xml: string): FeedItem[] {
+  const items: FeedItem[] = [];
   const itemRe = /<item[^>]*>([\s\S]*?)<\/item>/gi;
   let match: RegExpExecArray | null;
   while ((match = itemRe.exec(xml)) !== null) {
@@ -63,28 +66,76 @@ function parseRSSItems(xml: string): Array<{
   return items;
 }
 
+/** Atom 1.0 parser（ナタリー等で使用） */
+function parseAtomEntries(xml: string): FeedItem[] {
+  const entries: FeedItem[] = [];
+  const entryRe = /<entry[^>]*>([\s\S]*?)<\/entry>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = entryRe.exec(xml)) !== null) {
+    const block = match[1];
+    const linkMatch = block.match(/<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']+)["']/i)
+      || block.match(/<link[^>]*href=["']([^"']+)["']/i);
+    entries.push({
+      title: extractTag(block, 'title'),
+      link: linkMatch?.[1] || '',
+      description: extractTag(block, 'summary') || extractTag(block, 'content'),
+      pubDate: extractTag(block, 'published') || extractTag(block, 'updated'),
+      enclosure: '',
+      category: extractTag(block, 'category'),
+    });
+  }
+  return entries;
+}
+
+/** 统一解析 RSS/Atom */
+function parseFeedItems(xml: string): FeedItem[] {
+  const rssItems = parseRSSItems(xml);
+  if (rssItems.length > 0) return rssItems;
+  return parseAtomEntries(xml);
+}
+
 // ─── HTTP ヘルパー ──────────────────────────────────────────────────────────
 
 async function fetchWithTimeout(url: string, timeoutMs = 12000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    return await fetch(url, {
       signal: controller.signal,
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Yuujin-NewsBot/1.0)' },
       redirect: 'follow',
     });
-    return res;
   } finally {
     clearTimeout(timer);
   }
 }
 
+// ─── 标题关键词黑名单（内容安全）──────────────────────────────────────────
+
+const TITLE_BLACKLIST = [
+  // 暴力・犯罪
+  /死亡/, /死者/, /殺人/, /逮捕/, /容疑者?/, /遺体/, /行方不明/,
+  /事故死/, /自殺/, /暴行/, /強盗/, /詐欺被害/,
+  // 政治・国際紛争
+  /首相/, /大統領/, /総理大臣/, /外務省/, /防衛省/,
+  /国会/, /選挙/, /政党/, /与党/, /野党/,
+  // 軍事
+  /ミサイル/, /核実験/, /軍事/, /空爆/, /戦争/,
+  // 中国市場向けセンシティブ
+  /習近平/, /天安門/, /チベット独立/, /台湾独立/, /ウイグル/,
+  // 災害（大規模）
+  /震度[5-7]/, /津波警報/, /大規模噴火/,
+];
+
+function isTitleBlacklisted(title: string): boolean {
+  return TITLE_BLACKLIST.some(re => re.test(title));
+}
+
 // ─── 源ページ解析（全文 + OG画像を1回の fetch で取得）─────────────────────────
 
 interface PageData {
-  body: string;     // 正文（<p> 标签提取）
-  ogImage: string;  // og:image URL
+  body: string;
+  ogImage: string;
 }
 
 /** 非正文パターン — ナビ、広告、シェアボタン等 */
@@ -93,15 +144,11 @@ const GARBAGE_PATTERNS = [
   /googletag/,
   /JavaScript.*無効/,
   /JavaScriptの設定を/,
-  /マイページ購入履歴/,
   /メールでシェアする/,
   /Facebookでシェアする/,
   /Xでシェアする/,
   /はてなブックマーク/,
   /シェアする.*シェアする/,
-  /ランキング有料主要国内/,
-  /トップ速報ライブ/,
-  /購入履歴トップ/,
   /cookie/i,
   /プライバシーポリシー.*利用規約/,
   /^\[?PR\]?$/,
@@ -115,17 +162,11 @@ const GARBAGE_PATTERNS = [
   /^写真[:：]|^出典[:：]/,
   /ログイン.*新規登録/,
   /アプリで開く/,
-  /^\d+コメント\d+件/,
   /コメント\d+件/,
-  /ココがポイント/,
-  /^.{0,50}\d{1,2}\/\d{1,2}\([月火水木金土日]\)\s*\d{1,2}:\d{2}/,
   /この記事についてツイート/,
   /^提供[:：]/,
   /^配信[:：]/,
   /^最終更新[:：]/,
-  /みんなの意見/,
-  /※\s*統計に基づく/,
-  /^.{0,30}に期待することは/,
   /PR\s*TIMES/i,
   /プレスリリース/,
   /^広告$/,
@@ -137,10 +178,7 @@ const GARBAGE_PATTERNS = [
   /^この記事は.*提供/,
   /^©\s*\d{4}/,
   /copyright/i,
-  /^photo\s*:/i,
-  /^画像[:：]/,
   /転載.*禁止/,
-  /^元記事/,
   /続きを読む/,
   /^購読/,
   /メルマガ/,
@@ -151,9 +189,6 @@ const GARBAGE_PATTERNS = [
   /会員限定/,
   /月額.*円/,
   /無料会員登録/,
-  /プレミアム/,
-  /サブスクリプション/,
-  /^この記事は有料/,
   /残り\d+文字/,
   /全文を読む/,
   /続きは有料/,
@@ -166,10 +201,6 @@ function isGarbageText(text: string): boolean {
   return GARBAGE_PATTERNS.some(re => re.test(text));
 }
 
-/**
- * 从源 URL 抓取网页，一次性提取正文和 OG 图片。
- * 优先从 <article> 标签提取正文，过滤掉导航/广告/脚本等。
- */
 async function fetchPageData(url: string): Promise<PageData> {
   try {
     const res = await fetchWithTimeout(url, 10000);
@@ -189,7 +220,6 @@ async function fetchPageData(url: string): Promise<PageData> {
     }
 
     // --- 正文提取 ---
-    // 1) 去掉 script / style / nav / footer / header / aside / noscript
     let cleaned = html
       .replace(/<script[\s\S]*?<\/script>/gi, '')
       .replace(/<style[\s\S]*?<\/style>/gi, '')
@@ -200,11 +230,9 @@ async function fetchPageData(url: string): Promise<PageData> {
       .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
       .replace(/<!--[\s\S]*?-->/g, '');
 
-    // 2) 优先从 <article> 标签内提取（大多数新闻站点都用 <article>）
     const articleMatch = cleaned.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
     const contentHtml = articleMatch ? articleMatch[1] : cleaned;
 
-    // 3) 提取 <p> 标签，过滤垃圾文本
     const paragraphs: string[] = [];
     const pRegex = /<p[^>]*>([\s\S]*?)<\/p>/gi;
     let m: RegExpExecArray | null;
@@ -218,8 +246,8 @@ async function fetchPageData(url: string): Promise<PageData> {
       if (text.length >= 15 && !isGarbageText(text)) paragraphs.push(text);
     }
 
-    // 末尾广告段落清洗：从尾部移除含广告/版权/付费墙关键词的段落
-    const tailGarbageRe = /PR|広告|配信|©|copyright|提供|転載|All Rights Reserved|プレスリリース|有料会員|有料記事|会員限定|残り\d+文字|全文を読む|続きは有料|ここから先は|無料会員登録|月額.*円/i;
+    // 末尾广告段落清洗
+    const tailGarbageRe = /PR|広告|配信|©|copyright|提供|転載|All Rights Reserved|プレスリリース|有料|残り\d+文字|全文を読む|続きは有料|ここから先は|無料会員登録|月額.*円/i;
     while (paragraphs.length > 0) {
       const last = paragraphs[paragraphs.length - 1];
       if (last.length < 80 && tailGarbageRe.test(last)) {
@@ -229,115 +257,51 @@ async function fetchPageData(url: string): Promise<PageData> {
       }
     }
 
-    const body = paragraphs.join('\n');
-
-    return { body, ogImage };
+    return { body: paragraphs.join('\n'), ogImage };
   } catch {
     return { body: '', ogImage: '' };
   }
 }
 
-// ─── 各ソース抓取ロジック ──────────────────────────────────────────────────────
+// ─── 新闻源定义 ──────────────────────────────────────────────────────
 
-async function fetchYahooMain(): Promise<RawArticle[]> {
-  const url = 'https://news.yahoo.co.jp/rss/topics/top-picks.xml';
+interface FeedSource {
+  name: string;
+  url: string;
+  category: string;
+  maxItems: number;
+}
+
+const FEED_SOURCES: FeedSource[] = [
+  { name: 'ITmedia AI+', url: 'https://rss.itmedia.co.jp/rss/2.0/aiplus.xml', category: 'ai', maxItems: 8 },
+  { name: 'ナタリー 音楽', url: 'https://natalie.mu/music/feed/news', category: 'music', maxItems: 8 },
+  { name: 'ナタリー コミック', url: 'https://natalie.mu/comic/feed/news', category: 'comic', maxItems: 8 },
+  { name: 'Gizmodo Japan', url: 'https://www.gizmodo.jp/index.xml', category: 'tech', maxItems: 8 },
+  { name: 'Lifehacker Japan', url: 'https://www.lifehacker.jp/feed/index.xml', category: 'lifestyle', maxItems: 8 },
+];
+
+async function fetchFeed(source: FeedSource): Promise<RawArticle[]> {
   try {
-    const res = await fetchWithTimeout(url);
+    const res = await fetchWithTimeout(source.url);
     if (!res.ok) return [];
     const xml = await res.text();
-    return parseRSSItems(xml).slice(0, 10).map((item) => ({
+    return parseFeedItems(xml).slice(0, source.maxItems).map((item) => ({
       title: item.title,
       summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
       content: item.description.replace(/<[^>]+>/g, '') || item.title,
       sourceUrl: item.link,
-      source: 'Yahoo!ニュース',
+      source: source.name,
       imageUrl: item.enclosure || '',
       publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
-      category: mapCategory(item.category || item.title),
-      difficulty: 'N4',
+      category: source.category,
     }));
-  } catch { return []; }
-}
-
-async function fetchYahooIT(): Promise<RawArticle[]> {
-  const url = 'https://news.yahoo.co.jp/rss/topics/it.xml';
-  try {
-    const res = await fetchWithTimeout(url);
-    if (!res.ok) return [];
-    const xml = await res.text();
-    return parseRSSItems(xml).slice(0, 8).map((item) => ({
-      title: item.title,
-      summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
-      content: item.description.replace(/<[^>]+>/g, '') || item.title,
-      sourceUrl: item.link,
-      source: 'Yahoo!ニュース IT',
-      imageUrl: item.enclosure || '',
-      publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
-      category: 'technology',
-      difficulty: 'N3',
-    }));
-  } catch { return []; }
-}
-
-async function fetchNHK(): Promise<RawArticle[]> {
-  const url = 'https://news.web.nhk/n-data/conf/na/rss/cat0.xml';
-  try {
-    const res = await fetchWithTimeout(url);
-    if (!res.ok) return [];
-    const xml = await res.text();
-    return parseRSSItems(xml).slice(0, 10).map((item) => ({
-      title: item.title,
-      summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
-      content: item.description.replace(/<[^>]+>/g, '') || item.title,
-      sourceUrl: item.link,
-      source: 'NHKニュース',
-      imageUrl: '',
-      publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
-      category: mapCategory(item.category || item.title),
-      difficulty: 'N2',
-    }));
-  } catch { return []; }
-}
-
-async function fetchAsahi(): Promise<RawArticle[]> {
-  const url = 'https://www.asahi.com/rss/asahi/newsheadlines.rdf';
-  try {
-    const res = await fetchWithTimeout(url);
-    if (!res.ok) return [];
-    const xml = await res.text();
-    return parseRSSItems(xml).slice(0, 8).map((item) => ({
-      title: item.title,
-      summary: item.description.replace(/<[^>]+>/g, '').slice(0, 200),
-      content: item.description.replace(/<[^>]+>/g, '') || item.title,
-      sourceUrl: item.link,
-      source: '朝日新聞',
-      imageUrl: '',
-      publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
-      category: mapCategory(item.title),
-      difficulty: 'N1',
-    }));
-  } catch { return []; }
-}
-
-function mapCategory(text: string): string {
-  if (/政治|選挙|国会|政府/.test(text)) return 'politics';
-  if (/経済|株|企業|ビジネス/.test(text)) return 'business';
-  if (/テクノロジー|AI|科学|技術|宇宙|IT/.test(text)) return 'technology';
-  if (/スポーツ|野球|サッカー|オリンピック/i.test(text)) return 'sports';
-  if (/文化|芸術|映画|音楽|アニメ/.test(text)) return 'culture';
-  if (/旅行|観光|グルメ|食/.test(text)) return 'travel';
-  if (/国際|世界|海外/.test(text)) return 'international';
-  if (/社会|事件|事故/.test(text)) return 'society';
-  if (/健康|医療|病気/.test(text)) return 'health';
-  return 'general';
+  } catch {
+    return [];
+  }
 }
 
 // ─── 画像 → OSS 転送 ────────────────────────────────────────────────────────
 
-/**
- * 下载外部图片，上传到 OSS，返回 OSS URL。
- * 失败时返回空字符串。
- */
 async function mirrorImageToOSS(
   imageUrl: string,
   articleId: string,
@@ -349,7 +313,7 @@ async function mirrorImageToOSS(
     const contentType = res.headers.get('content-type') || 'image/jpeg';
     const arrayBuf = await res.arrayBuffer();
     const buf = Buffer.from(arrayBuf);
-    if (buf.length < 1000 || buf.length > 5_000_000) return ''; // 跳过过小/过大
+    if (buf.length < 1000 || buf.length > 5_000_000) return '';
 
     const ext = contentType.includes('png') ? 'png'
       : contentType.includes('webp') ? 'webp'
@@ -362,25 +326,26 @@ async function mirrorImageToOSS(
   }
 }
 
+// ─── カテゴリ絵文字 ──────────────────────────────────────────────────────
+
+function categoryEmoji(category: string): string {
+  const map: Record<string, string> = {
+    ai: '🤖', music: '🎵', comic: '📚', tech: '💻', lifestyle: '✨',
+  };
+  return map[category] || '📰';
+}
+
 // ─── メインサービス ──────────────────────────────────────────────────────────
 
 export class NewsFetcherService {
-  /**
-   * 全ソースから抓取、去重、新規記事は即座に全文+画像を取得して保存。
-   * RSS のリンクは時間が経つと 404 になるため、挿入時に即座にスクレイピング。
-   */
-  /** 内容字数范围：过短无法阅读，过长体验差 */
-  static MIN_CONTENT_LENGTH = 100;
-  static MAX_CONTENT_LENGTH = 5000;
+  static MIN_CONTENT_LENGTH = 200;
+  static MAX_CONTENT_LENGTH = 3000;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async fetchAll(ctx: any, ossConfig?: OSSConfig): Promise<{ inserted: number; skipped: number; enriched: number }> {
-    const results = await Promise.allSettled([
-      fetchYahooMain(),
-      fetchYahooIT(),
-      fetchNHK(),
-      fetchAsahi(),
-    ]);
+    const results = await Promise.allSettled(
+      FEED_SOURCES.map(source => fetchFeed(source)),
+    );
 
     const articles: RawArticle[] = [];
     for (const r of results) {
@@ -394,12 +359,15 @@ export class NewsFetcherService {
 
     for (const article of articles) {
       if (!article.title || !article.sourceUrl) { skipped++; continue; }
+
+      // 标题黑名单过滤
+      if (isTitleBlacklisted(article.title)) { skipped++; continue; }
+
       const existing = await ctx.model.News.findOne({ sourceUrl: article.sourceUrl });
       if (existing) { skipped++; continue; }
 
       const id = uuidv4();
 
-      // 即座にソースページから全文＋OG画像を取得（RSS リンクは短命なので）
       let content = article.content || article.title;
       let summary = article.summary || '';
       let imageUrl = '';
@@ -417,7 +385,7 @@ export class NewsFetcherService {
         if (page.body.length > 0 || imageUrl) enriched++;
       } catch { /* continue with RSS data */ }
 
-      // 质量门控：内容过短或过长的文章直接丢弃
+      // 质量门控
       if (content.length < NewsFetcherService.MIN_CONTENT_LENGTH
         || content.length > NewsFetcherService.MAX_CONTENT_LENGTH) {
         skipped++;
@@ -433,9 +401,9 @@ export class NewsFetcherService {
         source: article.source,
         sourceUrl: article.sourceUrl,
         category: article.category,
-        difficulty: article.difficulty,
+        difficulty: '',
         status: 'draft',
-        annotations: JSON.stringify({ imageEmoji: categoryEmoji(article.category), paragraphs: [], comments: [] }),
+        annotations: JSON.stringify({ imageEmoji: categoryEmoji(article.category), cache: {} }),
         publishedAt: article.publishedAt,
       });
       inserted++;
@@ -443,13 +411,4 @@ export class NewsFetcherService {
 
     return { inserted, skipped, enriched };
   }
-}
-
-function categoryEmoji(category: string): string {
-  const map: Record<string, string> = {
-    politics: '🏛️', business: '💼', technology: '💻', sports: '⚽',
-    culture: '🎭', travel: '✈️', international: '🌍', society: '📰',
-    health: '🏥', general: '📋',
-  };
-  return map[category] || '📰';
 }

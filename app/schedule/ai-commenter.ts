@@ -1,11 +1,11 @@
 /**
  * ai-commenter — AI 角色自动评论新闻
  *
- * 每 30 分钟：
- *   1. 找 24h 内发布、且 AI 评论数 < 2 的新闻
- *   2. 随机选 1-2 个 preset 角色
- *   3. 调用 ProductAI 生成符合角色个性的评论
- *   4. 写入 news_comments（is_ai=1）
+ * 每 4 小时：
+ *   1. 找 48h 内发布、且 AI 评论数 < 3 的新闻
+ *   2. 随机选未评论该文章的 preset 角色
+ *   3. 限制每角色每天最多 3 条评论
+ *   4. 调用 ProductAI 生成评论 → 写入 news_comments
  */
 
 import { Subscription } from 'egg';
@@ -18,6 +18,9 @@ const PRESET_CHARACTER_IDS = [
   'preset-yamamoto-sakura',
 ];
 
+const MAX_COMMENTS_PER_ARTICLE = 3;
+const MAX_COMMENTS_PER_CHARACTER_PER_DAY = 3;
+
 function boneData(bone: unknown): Record<string, unknown> {
   if (bone && typeof (bone as { getRaw?: () => Record<string, unknown> }).getRaw === 'function') {
     return (bone as { getRaw: () => Record<string, unknown> }).getRaw();
@@ -27,38 +30,57 @@ function boneData(bone: unknown): Record<string, unknown> {
 
 export default class AICommenter extends Subscription {
   static schedule = {
-    interval: '30m',
+    interval: '4h',
     type: 'worker',
     immediate: false,
-    disable: true,     // 暂停：新闻系统重构中
   };
+
   async subscribe() {
     const ctx = this.ctx;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const aiConfig: ProductAIConfig = (ctx.app.config as any).bizConfig?.productAi;
     if (!aiConfig) return;
 
-    // 找 24h 内的新文章
-    const since = new Date(Date.now() - 24 * 3600000);
+    // 统计今日各角色已评论数
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const dailyCounts: Record<string, number> = {};
+    for (const charId of PRESET_CHARACTER_IDS) {
+      const todayComments = await ctx.model.NewsComment.find({
+        characterId: charId,
+        isAi: 1,
+        createdAt: { $gt: todayStart },
+      });
+      dailyCounts[charId] = (todayComments as unknown[]).length;
+    }
+
+    // 找 48h 内发布的新闻
+    const since = new Date(Date.now() - 48 * 3600000);
     const recentNews = await ctx.model.News.find({
+      status: 'published',
       publishedAt: { $gt: since },
     }).order('published_at DESC').limit(10);
 
     for (const newsRow of recentNews as unknown[]) {
       const article = boneData(newsRow);
 
-      // 检查这篇文章的 AI 评论数
+      // 这篇文章的 AI 评论数
       const existingAiComments = await ctx.model.NewsComment.find({
         newsId: article.id,
         isAi: 1,
       });
-      if ((existingAiComments as unknown[]).length >= 2) continue;
+      if ((existingAiComments as unknown[]).length >= MAX_COMMENTS_PER_ARTICLE) continue;
 
-      // 随机选一个尚未评论过该文章的 preset 角色
+      // 已评论角色
       const commentedCharIds = new Set(
         (existingAiComments as unknown[]).map((c) => boneData(c).characterId as string),
       );
-      const available = PRESET_CHARACTER_IDS.filter((id) => !commentedCharIds.has(id));
+
+      // 选一个可用角色（未评论该文章 + 今日未超额）
+      const available = PRESET_CHARACTER_IDS.filter(
+        (id) => !commentedCharIds.has(id) && (dailyCounts[id] || 0) < MAX_COMMENTS_PER_CHARACTER_PER_DAY,
+      );
       if (available.length === 0) continue;
 
       const characterId = available[Math.floor(Math.random() * available.length)];
@@ -67,6 +89,7 @@ export default class AICommenter extends Subscription {
       const character = boneData(charRow);
 
       await this.generateComment(ctx, aiConfig, article, character);
+      dailyCounts[characterId] = (dailyCounts[characterId] || 0) + 1;
     }
   }
 
