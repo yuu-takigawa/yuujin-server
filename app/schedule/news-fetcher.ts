@@ -4,11 +4,14 @@
  * 流程:
  *   1. 从 5 个垂直源抓取文章，去重+黑名单过滤后存 draft
  *   2. 选 1 篇有封面图的 draft → 阿里云图片审核 → 通过则 published
- *   3. 审核不通过 → 删除该文章
- *   4. 清理 1 年前的旧文章
+ *   3. 发布后 spawn 子进程生成振り仮名（kuromoji），存入 annotations.furigana
+ *   4. 审核不通过 → 删除该文章
+ *   5. 清理 1 年前的旧文章
  */
 
 import { Subscription } from 'egg';
+import { execFile } from 'child_process';
+import * as path from 'path';
 import { NewsFetcherService } from '../module/news/fetcher/NewsFetcherService';
 import { ContentModerationService } from '../module/avatar/ContentModerationService';
 
@@ -17,6 +20,35 @@ function boneData(bone: unknown): Record<string, unknown> {
     return (bone as { getRaw: () => Record<string, unknown> }).getRaw();
   }
   return bone as Record<string, unknown>;
+}
+
+/**
+ * 子进程生成振り仮名。kuromoji 词典在子进程中加载，
+ * 处理完成后子进程退出，内存随之释放，不影响主进程。
+ */
+function generateFuriganaInWorker(
+  paragraphs: string[],
+): Promise<Record<string, [string, string][]>> {
+  return new Promise((resolve, reject) => {
+    const workerPath = path.join(process.cwd(), 'app', 'schedule', 'furigana-worker.js');
+    const child = execFile('node', [workerPath], {
+      timeout: 30000,
+      maxBuffer: 5 * 1024 * 1024,
+    }, (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(`furigana worker failed: ${stderr || err.message}`));
+        return;
+      }
+      try {
+        const result = JSON.parse(stdout) as { furigana: Record<string, [string, string][]> };
+        resolve(result.furigana);
+      } catch {
+        reject(new Error(`furigana worker invalid output: ${stdout.slice(0, 200)}`));
+      }
+    });
+    child.stdin?.write(JSON.stringify({ paragraphs }));
+    child.stdin?.end();
+  });
 }
 
 export default class NewsFetcher extends Subscription {
@@ -53,7 +85,7 @@ export default class NewsFetcher extends Subscription {
       const article = boneData(row);
       const imageUrl = article.imageUrl as string;
 
-      // 无封面图的文章跳过（不删除，等后续可能的补图）
+      // 无封面图的文章跳过
       if (!imageUrl) continue;
 
       // 阿里云图片内容审核
@@ -64,10 +96,34 @@ export default class NewsFetcher extends Subscription {
         continue;
       }
 
-      // 审核通过 → 发布
+      // 审核通过 → 生成振り仮名 → 发布
+      const content = article.content as string;
+      const paragraphs = content.split('\n').filter((p: string) => p.trim().length > 0);
+
+      let annotations: Record<string, unknown>;
+      try {
+        annotations = typeof article.annotations === 'string'
+          ? JSON.parse(article.annotations as string)
+          : (article.annotations as Record<string, unknown>) || {};
+      } catch {
+        annotations = {};
+      }
+
+      try {
+        const furigana = await generateFuriganaInWorker(paragraphs);
+        annotations.furigana = furigana;
+        ctx.logger.info(`[NewsFetcher] Furigana generated for ${article.id}: ${Object.keys(furigana).length} paragraphs`);
+      } catch (err) {
+        ctx.logger.warn(`[NewsFetcher] Furigana failed for ${article.id}: ${err}`);
+        // 注音失败不阻塞发布
+      }
+
       await ctx.model.News.update(
         { id: article.id },
-        { status: 'published' },
+        {
+          status: 'published',
+          annotations: JSON.stringify(annotations),
+        },
       );
       published++;
       ctx.logger.info(`[NewsFetcher] Published: ${article.title}`);
