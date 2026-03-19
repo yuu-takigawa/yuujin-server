@@ -12,7 +12,7 @@ import { Context as EggCtx } from 'egg';
 import { NewsService } from './NewsService';
 import { NewsAnnotatorService } from './fetcher/NewsAnnotatorService';
 import { ProductAIConfig } from '../ai/ProductAIService';
-import { generateFurigana } from './FuriganaService';
+// kuromoji furigana 暂时禁用（词典 ~200MB，小规格 ECS OOM）
 
 @HTTPController({
   path: '/news',
@@ -78,44 +78,6 @@ export class NewsController {
       return { success: false, error: 'News article not found' };
     }
     return { success: true };
-  }
-
-  /**
-   * 振り仮名生成（kuromoji 辞書ベース、AI 不要、即時返却）
-   *
-   * POST /news/:id/furigana
-   * Body: { paragraphIndex: number }
-   * Response: { ruby: [[kanji, reading], ...] }
-   */
-  @HTTPMethod({
-    method: HTTPMethodEnum.POST,
-    path: '/:id/furigana',
-  })
-  async furigana(@Context() ctx: EggContext, @HTTPParam() id: string) {
-    const eggCtx = ctx as unknown as EggCtx;
-    const body = eggCtx.request.body as { paragraphIndex?: number };
-    const { paragraphIndex } = body;
-
-    if (paragraphIndex === undefined) {
-      eggCtx.status = 400;
-      return { success: false, error: 'paragraphIndex is required' };
-    }
-
-    const article = await this.newsService.getById(eggCtx, id);
-    if (!article) {
-      eggCtx.status = 404;
-      return { success: false, error: 'News article not found' };
-    }
-
-    const content = (article as Record<string, unknown>).content as string;
-    const paragraphs = content.split('\n').filter(p => p.trim().length > 0);
-    if (paragraphIndex < 0 || paragraphIndex >= paragraphs.length) {
-      eggCtx.status = 400;
-      return { success: false, error: 'Invalid paragraphIndex' };
-    }
-
-    const ruby = await generateFurigana(paragraphs[paragraphIndex]);
-    return { success: true, data: { ruby } };
   }
 
   /**
