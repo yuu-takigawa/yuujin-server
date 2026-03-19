@@ -34,6 +34,8 @@ COPY --from=builder /app/database ./database
 COPY --from=builder /app/prompts ./prompts
 COPY --from=builder /app/prompts-compiled/ ./prompts/
 COPY --from=builder /app/scripts ./scripts
+# Overlay compiled scripts JS
+COPY --from=builder /app/dist/scripts/ ./scripts/
 COPY --from=builder /app/typings ./typings
 
 ENV NODE_ENV=production
