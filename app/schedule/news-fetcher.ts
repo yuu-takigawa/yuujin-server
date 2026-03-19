@@ -25,6 +25,7 @@ export default class NewsFetcher extends Subscription {
     cron: '0 * * * *', // 每整点运行
     type: 'worker',
     immediate: true,   // 启动时立即运行一次
+    disable: true,     // 暂停：新闻系统重构中
   };
   async subscribe() {
     const ctx = this.ctx;

@@ -30,6 +30,7 @@ export default class AICommenter extends Subscription {
     interval: '30m',
     type: 'worker',
     immediate: false,
+    disable: true,     // 暂停：新闻系统重构中
   };
   async subscribe() {
     const ctx = this.ctx;
