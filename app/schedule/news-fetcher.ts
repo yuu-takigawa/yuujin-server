@@ -30,7 +30,7 @@ function generateFuriganaInWorker(
   paragraphs: string[],
 ): Promise<Record<string, [string, string][]>> {
   return new Promise((resolve, reject) => {
-    const workerPath = path.join(process.cwd(), 'app', 'schedule', 'furigana-worker.js');
+    const workerPath = path.join(process.cwd(), 'app', 'module', 'news', 'fetcher', 'furigana-worker.js');
     const child = execFile('node', [workerPath], {
       timeout: 30000,
       maxBuffer: 5 * 1024 * 1024,
