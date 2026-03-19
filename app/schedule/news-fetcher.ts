@@ -81,7 +81,7 @@ export default class NewsFetcher extends Subscription {
     });
 
     for (const row of drafts as unknown[]) {
-      if (published >= 1) break;
+      if (published >= 5) break; // 临时：首次拉取 5 篇，后续改回 1
       const article = boneData(row);
       const imageUrl = article.imageUrl as string;
 
