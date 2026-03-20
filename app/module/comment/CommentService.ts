@@ -25,12 +25,28 @@ export interface CreateCommentInput {
   accessLevel: AccessLevel.PUBLIC,
 })
 export class CommentService {
-  /** 获取某篇文章的评论列表（两层：顶层 + 回复） */
-  async list(ctx: Context, newsId: string) {
-    const allComments = await ctx.model.NewsComment.find({ newsId })
-      .order('created_at ASC');
+  /** 获取某篇文章的评论列表 — 只返回该用户的"后花园"：自己的评论 + AI对自己的回复 + AI公共评论 */
+  async list(ctx: Context, newsId: string, userId?: string) {
+    const allComments = await ctx.model.NewsComment.find({ newsId }).order('created_at ASC');
 
-    const comments = (allComments as unknown[]).map(boneData);
+    let comments = (allComments as unknown[]).map(boneData);
+
+    // 过滤：只保留当前用户的"后花园"
+    if (userId) {
+      // 先收集该用户自己发的评论 ID
+      const ownCommentIds = new Set(
+        comments.filter((c) => c.userId === userId).map((c) => c.id as string),
+      );
+      comments = comments.filter((c) => {
+        // 用户自己的评论
+        if (c.userId === userId) return true;
+        // AI 公共评论（cron 生成，没有 parentId）
+        if (c.isAi && !c.parentId) return true;
+        // AI 对该用户评论的回复
+        if (c.isAi && c.parentId && ownCommentIds.has(c.parentId as string)) return true;
+        return false;
+      });
+    }
 
     // 获取所有 userId 和 characterId 以批量查询用户/角色信息
     const userIds = [...new Set(comments.map((c) => c.userId as string).filter(Boolean))];

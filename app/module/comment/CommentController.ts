@@ -28,10 +28,12 @@ export class CommentController {
   @Inject()
   commentService!: CommentService;
 
-  /** GET /news/:id/comments */
+  /** GET /news/:id/comments — 只返回当前用户 + 其AI角色的评论 */
   @HTTPMethod({ method: HTTPMethodEnum.GET, path: '/:id/comments' })
   async list(@Context() ctx: EggContext, @HTTPParam() id: string) {
-    const comments = await this.commentService.list(ctx as unknown as EggCtx, id);
+    const eggCtx = ctx as unknown as EggCtx;
+    const userId = (eggCtx as Record<string, unknown>).userId as string;
+    const comments = await this.commentService.list(eggCtx, id, userId);
     return { success: true, data: comments };
   }
 
