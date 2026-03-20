@@ -43,9 +43,31 @@ export class NewsController {
       readMap = await this.newsService.getReadStatus(eggCtx, userId, newsIds);
     }
 
+    // 批量查询每篇文章的评论数（该用户视角）
+    let commentCounts: Record<string, number> = {};
+    if (userId) {
+      const newsIds = articles.map((a: Record<string, unknown>) => a.id as string);
+      if (newsIds.length > 0) {
+        const allComments = await eggCtx.model.NewsComment.find({ newsId: newsIds });
+        const commentsList = (allComments as unknown[]).map((c: unknown) => {
+          const raw = c && typeof (c as { getRaw?: () => Record<string, unknown> }).getRaw === 'function'
+            ? (c as { getRaw: () => Record<string, unknown> }).getRaw() : c as Record<string, unknown>;
+          return raw;
+        });
+        // 收集该用户自己的评论 ID
+        const ownIds = new Set(commentsList.filter((c) => c.userId === userId).map((c) => c.id as string));
+        for (const c of commentsList) {
+          const nid = c.newsId as string;
+          const visible = c.userId === userId || (c.isAi && !c.parentId) || (c.isAi && c.parentId && ownIds.has(c.parentId as string));
+          if (visible) commentCounts[nid] = (commentCounts[nid] || 0) + 1;
+        }
+      }
+    }
+
     const result = articles.map((a: Record<string, unknown>) => ({
       ...a,
       isRead: !!readMap[a.id as string],
+      commentCount: commentCounts[a.id as string] || 0,
     }));
 
     return { success: true, data: { articles: result, hasMore } };
