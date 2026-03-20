@@ -17,6 +17,7 @@ import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
 import { v4 as uuidv4 } from 'uuid';
 import { OSSService } from './OSSService';
+import { ContentModerationService } from './ContentModerationService';
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
@@ -119,6 +120,24 @@ export class AvatarController {
     } catch {
       eggCtx.status = 500;
       return { success: false, error: 'Upload to OSS failed' };
+    }
+
+    // 阿里云图片内容审核（GIF 也审核）
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ossConfig = (eggCtx.app.config as any).bizConfig?.oss;
+      const moderator = new ContentModerationService({
+        accessKeyId: ossConfig?.accessKeyId || '',
+        accessKeySecret: ossConfig?.accessKeySecret || '',
+      });
+      const modResult = await moderator.moderate(uploadResult.url);
+      if (!modResult.pass) {
+        eggCtx.status = 422;
+        return { success: false, error: `画像が審査に通りませんでした（${modResult.reason || '不適切なコンテンツ'}）` };
+      }
+    } catch (err) {
+      eggCtx.logger.warn('[Avatar] Moderation error (allowing upload):', err);
+      // 审核服务异常时放行，但记录日志
     }
 
     // 更新角色/用户头像 URL
