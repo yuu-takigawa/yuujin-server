@@ -2,7 +2,7 @@
  * NewsFetcherService — 自动抓取日本新闻
  *
  * 来源（5 垂直源，不含综合/社会/政治新闻）:
- *   1. ITmedia AI+（AI・IT 话题）
+ *   1. GIGAZINE（AI・IT・科学，替代 ITmedia AI+，因 image.itmedia.co.jp 国内不可达）
  *   2. ナタリー 音楽（音乐新闻）
  *   3. ナタリー コミック（漫画・动画新闻）
  *   4. Gizmodo Japan（科技・数码）
@@ -353,7 +353,9 @@ interface FeedSource {
 }
 
 const FEED_SOURCES: FeedSource[] = [
-  { name: 'ITmedia AI+', url: 'https://rss.itmedia.co.jp/rss/2.0/aiplus.xml', category: 'ai', maxItems: 8 },
+  // ITmedia AI+ の画像CDN（image.itmedia.co.jp）は中国大陸からアクセス不可のため
+  // GIGAZINE に変更（i.gzn.jp は国内アクセス可、AI/IT/科学記事が豊富）
+  { name: 'GIGAZINE', url: 'https://gigazine.net/news/rss_2.0/', category: 'ai', maxItems: 8 },
   { name: 'ナタリー 音楽', url: 'https://natalie.mu/music/feed/news', category: 'music', maxItems: 8 },
   { name: 'ナタリー コミック', url: 'https://natalie.mu/comic/feed/news', category: 'comic', maxItems: 8 },
   { name: 'Gizmodo Japan', url: 'https://www.gizmodo.jp/index.xml', category: 'tech', maxItems: 8 },
@@ -458,8 +460,10 @@ export class NewsFetcherService {
           content = page.body;
           summary = page.body.replace(/\n/g, ' ').slice(0, 200);
         }
-        if (page.ogImage && oss) {
-          const ossUrl = await mirrorImageToOSS(page.ogImage, id, oss);
+        // OG 图片 → OSS 转存
+        const ogUrl = page.ogImage || article.imageUrl; // fallback to RSS enclosure
+        if (ogUrl && oss) {
+          const ossUrl = await mirrorImageToOSS(ogUrl, id, oss);
           if (ossUrl) imageUrl = ossUrl;
         }
         if (page.body.length > 0 || imageUrl) enriched++;
