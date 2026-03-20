@@ -9,7 +9,8 @@ import {
 import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
 import { CharacterService } from './CharacterService';
-import { productAIChat, ProductAIConfig } from '../ai/ProductAIService';
+import { streamProductAIChat, ProductAIConfig } from '../ai/ProductAIService';
+import { PassThrough } from 'stream';
 
 @HTTPController({
   path: '/characters',
@@ -84,13 +85,31 @@ export class CharacterController {
 趣味: ${Array.isArray(body.hobbies) ? body.hobbies.join('、') : body.hobbies || '不明'}
 住所: ${body.location || '不明'}`;
 
+    // SSE 流式输出
+    eggCtx.set('Content-Type', 'text/event-stream');
+    eggCtx.set('Cache-Control', 'no-cache');
+    eggCtx.set('Connection', 'keep-alive');
+    eggCtx.set('X-Accel-Buffering', 'no');
+
+    const stream = new PassThrough();
+    eggCtx.body = stream;
+
+    const writeSSE = (data: Record<string, unknown>) => {
+      stream.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
     try {
-      const bio = await productAIChat(aiConfig, [{ role: 'user', content: prompt }]);
-      return { success: true, data: { bio: bio.trim() } };
+      writeSSE({ type: 'start' });
+      const generator = streamProductAIChat(aiConfig, [{ role: 'user', content: prompt }]);
+      for await (const delta of generator) {
+        writeSSE({ type: 'delta', content: delta });
+      }
+      writeSSE({ type: 'done' });
     } catch (err) {
       eggCtx.logger.warn('[GenerateBio] AI error:', err);
-      eggCtx.status = 500;
-      return { success: false, error: 'AI generation failed' };
+      writeSSE({ type: 'error', error: 'AI generation failed' });
+    } finally {
+      stream.end();
     }
   }
 
