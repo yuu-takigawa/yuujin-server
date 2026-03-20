@@ -9,6 +9,7 @@ import {
 import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
 import { CharacterService } from './CharacterService';
+import { productAIChat, ProductAIConfig } from '../ai/ProductAIService';
 
 @HTTPController({
   path: '/characters',
@@ -56,14 +57,41 @@ export class CharacterController {
     return { success: true, data: character };
   }
 
+  /** POST /characters/generate-bio  body: { name, age, gender, occupation, personality, hobbies, location } */
   @HTTPMethod({
     method: HTTPMethodEnum.POST,
-    path: '/generate',
+    path: '/generate-bio',
   })
-  async generate(@Context() ctx: EggContext) {
+  async generateBio(@Context() ctx: EggContext) {
     const eggCtx = ctx as unknown as EggCtx;
-    eggCtx.status = 501;
-    return { success: false, error: 'AI character generation not yet implemented' };
+    const body = eggCtx.request.body as Record<string, unknown>;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const aiConfig: ProductAIConfig = (eggCtx.app.config as any).bizConfig?.productAi;
+    if (!aiConfig) {
+      eggCtx.status = 500;
+      return { success: false, error: 'AI service not configured' };
+    }
+
+    const prompt = `以下のキャラクター情報に基づいて、自然で魅力的な自己紹介文を日本語で1つ書いてください。
+100〜150字程度で、そのキャラクターらしい口調で。自己紹介文のみ出力してください。
+
+名前: ${body.name || '不明'}
+年齢: ${body.age || '不明'}
+性別: ${body.gender || '不明'}
+職業: ${body.occupation || '不明'}
+性格: ${Array.isArray(body.personality) ? body.personality.join('、') : body.personality || '不明'}
+趣味: ${Array.isArray(body.hobbies) ? body.hobbies.join('、') : body.hobbies || '不明'}
+住所: ${body.location || '不明'}`;
+
+    try {
+      const bio = await productAIChat(aiConfig, [{ role: 'user', content: prompt }]);
+      return { success: true, data: { bio: bio.trim() } };
+    } catch (err) {
+      eggCtx.logger.warn('[GenerateBio] AI error:', err);
+      eggCtx.status = 500;
+      return { success: false, error: 'AI generation failed' };
+    }
   }
 
   @HTTPMethod({
