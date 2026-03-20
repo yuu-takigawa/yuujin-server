@@ -46,6 +46,9 @@ const PRESET_AVATARS = [
   { id: 'girl-04', label: '女の子D', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-04.png' },
   { id: 'girl-05', label: '女の子E', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-05.png' },
   { id: 'girl-06', label: '女の子F', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-06.png' },
+  { id: 'boy-07', label: '男の子G', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/boy-07.png' },
+  { id: 'girl-07', label: '女の子G', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-07.png' },
+  { id: 'girl-08', label: '女の子H', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-08.png' },
 ];
 
 @HTTPController({

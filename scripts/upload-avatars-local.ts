@@ -22,6 +22,9 @@ const AVATARS = [
   { id: 'girl-04', label: '女の子D' },
   { id: 'girl-05', label: '女の子E' },
   { id: 'girl-06', label: '女の子F' },
+  { id: 'boy-07', label: '男の子G' },
+  { id: 'girl-07', label: '女の子G' },
+  { id: 'girl-08', label: '女の子H' },
 ];
 
 function readEnv(): Record<string, string> {
