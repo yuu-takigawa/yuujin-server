@@ -6,5 +6,11 @@
   { "path": "../app/module/friend" },
   { "path": "../app/module/user" },
   { "path": "../app/module/news" },
-  { "path": "../app/module/credit" }
+  { "path": "../app/module/comment" },
+  { "path": "../app/module/credit" },
+  { "path": "../app/module/push" },
+  { "path": "../app/module/avatar" },
+  { "path": "../app/module/voice" },
+  { "path": "../app/module/notification" },
+  { "path": "../app/module/topic" }
 ]
