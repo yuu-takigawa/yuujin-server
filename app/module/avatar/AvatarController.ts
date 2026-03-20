@@ -109,7 +109,24 @@ export class AvatarController {
       return { success: false, error: mimeCheck.reason };
     }
 
-    // 上传到 OSS
+    // 阿里云图片内容审核（上传 OSS 前，用 base64 审核，省 OSS 用量）
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ossConfig = (eggCtx.app.config as any).bizConfig?.oss;
+      const moderator = new ContentModerationService({
+        accessKeyId: ossConfig?.accessKeyId || '',
+        accessKeySecret: ossConfig?.accessKeySecret || '',
+      });
+      const modResult = await moderator.moderateBuffer(buffer);
+      if (!modResult.pass) {
+        eggCtx.status = 422;
+        return { success: false, error: `画像が審査に通りませんでした（${modResult.reason || '不適切なコンテンツ'}）` };
+      }
+    } catch (err) {
+      eggCtx.logger.warn('[Avatar] Moderation error (allowing upload):', err);
+    }
+
+    // 审核通过，上传到 OSS
     const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
     const key = `avatars/${userId}/${uuidv4()}.${ext}`;
     let uploadResult: { url: string; key: string };
@@ -120,24 +137,6 @@ export class AvatarController {
     } catch {
       eggCtx.status = 500;
       return { success: false, error: 'Upload to OSS failed' };
-    }
-
-    // 阿里云图片内容审核（GIF 也审核）
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ossConfig = (eggCtx.app.config as any).bizConfig?.oss;
-      const moderator = new ContentModerationService({
-        accessKeyId: ossConfig?.accessKeyId || '',
-        accessKeySecret: ossConfig?.accessKeySecret || '',
-      });
-      const modResult = await moderator.moderate(uploadResult.url);
-      if (!modResult.pass) {
-        eggCtx.status = 422;
-        return { success: false, error: `画像が審査に通りませんでした（${modResult.reason || '不適切なコンテンツ'}）` };
-      }
-    } catch (err) {
-      eggCtx.logger.warn('[Avatar] Moderation error (allowing upload):', err);
-      // 审核服务异常时放行，但记录日志
     }
 
     // 更新角色/用户头像 URL

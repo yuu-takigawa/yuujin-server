@@ -55,8 +55,18 @@ export class ContentModerationService {
     return { ok: true };
   }
 
-  /** 第二层：阿里云内容安全 API 审核 */
+  /** 使用 Buffer 审核（base64 传输，无需先上传 OSS） */
+  async moderateBuffer(buffer: Buffer): Promise<ModerationResult> {
+    const base64 = buffer.toString('base64');
+    return this._doModerate({ content: base64 });
+  }
+
+  /** 使用 URL 审核（已上传的图片） */
   async moderate(imageUrl: string): Promise<ModerationResult> {
+    return this._doModerate({ url: imageUrl });
+  }
+
+  private async _doModerate(task: { url?: string; content?: string }): Promise<ModerationResult> {
     if (!this.config.accessKeyId || !this.config.accessKeySecret) {
       // 未配置密钥时直接通过（开发环境）
       return { pass: true };
@@ -70,7 +80,7 @@ export class ContentModerationService {
       const nonce = crypto.randomUUID();
 
       const body = JSON.stringify({
-        tasks: [{ dataId: nonce, url: imageUrl }],
+        tasks: [{ dataId: nonce, ...task }],
         scenes: ['porn', 'terrorism', 'ad'],
       });
 
