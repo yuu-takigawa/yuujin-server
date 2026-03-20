@@ -28,6 +28,17 @@ export interface RawArticle {
 
 // ─── RSS/RDF/Atom XML パーサー ──────────────────────────────────────
 
+function decodeXmlEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
 function extractTag(xml: string, tag: string): string {
   const patterns = [
     new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]></${tag}>`, 'i'),
@@ -35,7 +46,7 @@ function extractTag(xml: string, tag: string): string {
   ];
   for (const re of patterns) {
     const m = xml.match(re);
-    if (m) return m[1].trim();
+    if (m) return decodeXmlEntities(m[1].trim());
   }
   return '';
 }
