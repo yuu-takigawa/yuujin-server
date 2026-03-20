@@ -1,3 +1,4 @@
+import { PassThrough } from 'stream';
 import {
   HTTPController,
   HTTPMethod,
@@ -8,7 +9,17 @@ import {
 } from '@eggjs/tegg';
 import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
+import { v4 as uuidv4 } from 'uuid';
 import { CommentService } from './CommentService';
+import { streamProductAIChat, ProductAIConfig } from '../ai/ProductAIService';
+import { buildSystemPrompt } from '../conversation/lib/prompt-loader';
+
+function boneData(bone: unknown): Record<string, unknown> {
+  if (bone && typeof (bone as { getRaw?: () => Record<string, unknown> }).getRaw === 'function') {
+    return (bone as { getRaw: () => Record<string, unknown> }).getRaw();
+  }
+  return bone as Record<string, unknown>;
+}
 
 @HTTPController({
   path: '/news',
@@ -54,12 +65,146 @@ export class CommentController {
     }
   }
 
+  /** POST /news/:id/comments/ai-reply  body: { commentId, characterId }
+   *  SSE 流式返回 AI 角色的回复 */
+  @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/:id/comments/ai-reply' })
+  async aiReply(@Context() ctx: EggContext, @HTTPParam() id: string) {
+    const eggCtx = ctx as unknown as EggCtx;
+    const body = eggCtx.request.body as { commentId?: string; characterId?: string };
+
+    if (!body.commentId || !body.characterId) {
+      eggCtx.status = 400;
+      return { success: false, error: 'commentId and characterId are required' };
+    }
+
+    // SSE headers
+    eggCtx.set('Content-Type', 'text/event-stream');
+    eggCtx.set('Cache-Control', 'no-cache');
+    eggCtx.set('Connection', 'keep-alive');
+    eggCtx.set('X-Accel-Buffering', 'no');
+
+    const stream = new PassThrough();
+    eggCtx.body = stream;
+
+    const writeSSE = (data: Record<string, unknown>) => {
+      stream.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      const userId = (eggCtx as Record<string, unknown>).userId as string;
+
+      // 加载文章、角色、用户评论、好友关系（获取 soul/memory）、用户信息（获取 jpLevel）
+      const [articleRow, charRow, commentRow, friendshipRow, userRow] = await Promise.all([
+        eggCtx.model.News.findOne({ id }),
+        eggCtx.model.Character.findOne({ id: body.characterId }),
+        eggCtx.model.NewsComment.findOne({ id: body.commentId }),
+        eggCtx.model.Friendship.findOne({ userId, characterId: body.characterId }),
+        eggCtx.model.User.findOne({ id: userId }),
+      ]);
+
+      if (!articleRow || !charRow || !commentRow) {
+        writeSSE({ type: 'error', error: 'Article, character, or comment not found' });
+        stream.end();
+        return;
+      }
+
+      const article = boneData(articleRow);
+      const character = boneData(charRow);
+      const userComment = boneData(commentRow);
+      const friendship = friendshipRow ? boneData(friendshipRow) : null;
+      const user = userRow ? boneData(userRow) : null;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const aiConfig: ProductAIConfig = (eggCtx.app.config as any).bizConfig?.productAi;
+      if (!aiConfig) {
+        writeSSE({ type: 'error', error: 'AI service not configured' });
+        stream.end();
+        return;
+      }
+
+      const replyId = uuidv4();
+
+      writeSSE({
+        type: 'start',
+        commentId: replyId,
+        character: {
+          id: character.id,
+          name: character.name,
+          avatarEmoji: character.avatarEmoji || character.avatar_emoji || '🤖',
+        },
+      });
+
+      // 构建带 soul/memory 的 system prompt（与对话系统一致）
+      const soul = (friendship?.soul as string) || (character.initialSoul as string) || (character.initial_soul as string) || '';
+      const memory = (friendship?.memory as string) || null;
+      const jpLevel = (user?.jpLevel as string) || (user?.jp_level as string) || undefined;
+
+      const basePrompt = buildSystemPrompt({ soul, memory, userLevel: jpLevel });
+      const systemPrompt = `${basePrompt}
+
+## 現在のタスク：ニュースコメント欄で返信
+ニュース記事のコメント欄でユーザーに返信してください。
+- 自分のキャラクターの口調を使う
+- 相手のコメントに対して自然に反応する
+- 100字以内で
+- ハッシュタグ不要、絵文字1〜2個OK`;
+
+      // 收集文章内容摘要 + 评论区上下文
+      const articleContent = (article.content as string || '').slice(0, 500);
+      const existingComments = await eggCtx.model.NewsComment.find({ newsId: id }).order('created_at ASC').limit(20);
+      const commentContext = (existingComments as unknown[]).map(boneData)
+        .map((c) => `${c.isAi ? '(AI)' : '(User)'}: ${(c.content as string).slice(0, 100)}`)
+        .join('\n');
+
+      const userPrompt = `## ニュース記事
+タイトル: 「${article.title}」
+本文（抜粋）: ${articleContent}
+
+## コメント欄の流れ
+${commentContext || '（まだコメントはありません）'}
+
+## あなたへの返信リクエスト
+相手のコメント: 「${userComment.content}」
+このコメントへの返信を書いてください。`;
+
+      let fullContent = '';
+      const generator = streamProductAIChat(
+        aiConfig,
+        [{ role: 'user', content: userPrompt }],
+        systemPrompt,
+      );
+
+      for await (const delta of generator) {
+        fullContent += delta;
+        writeSSE({ type: 'delta', content: delta });
+      }
+
+      // 保存 AI 回复到 DB
+      await eggCtx.model.NewsComment.create({
+        id: replyId,
+        newsId: id,
+        characterId: body.characterId,
+        parentId: body.commentId,
+        content: fullContent.trim().slice(0, 500),
+        isAi: 1,
+      });
+
+      writeSSE({ type: 'done', commentId: replyId });
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      eggCtx.logger.warn('[AIReply] Failed:', errorMessage);
+      writeSSE({ type: 'error', error: errorMessage });
+    } finally {
+      stream.end();
+    }
+  }
+
   /** DELETE /news/:newsId/comments/:commentId */
   @HTTPMethod({ method: HTTPMethodEnum.DELETE, path: '/:newsId/comments/:commentId' })
   async delete(@Context() ctx: EggContext, @HTTPParam() newsId: string, @HTTPParam() commentId: string) {
     const eggCtx = ctx as unknown as EggCtx;
     const userId = (eggCtx as Record<string, unknown>).userId as string;
-    void newsId; // newsId 暂时不需要额外验证，CommentService 内已校验 ownership
+    void newsId;
     const deleted = await this.commentService.delete(eggCtx, commentId, userId);
     if (!deleted) {
       eggCtx.status = 404;

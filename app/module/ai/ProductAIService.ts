@@ -64,3 +64,16 @@ export async function productAIChat(
   }
   return result;
 }
+
+/**
+ * 流式 AI 对话（逐 token yield，用于 SSE 端点）
+ */
+export async function* streamProductAIChat(
+  config: ProductAIConfig,
+  messages: ChatMessage[],
+  systemPrompt?: string,
+): AsyncGenerator<string, void, unknown> {
+  const provider = config.provider;
+  const client = createClient(config, provider);
+  yield* client.streamChat(messages, systemPrompt);
+}
