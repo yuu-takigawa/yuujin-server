@@ -32,19 +32,20 @@ function checkMime(mimeType: string, size: number): { ok: boolean; reason?: stri
   return { ok: true };
 }
 
-// いらすとや 风格预设头像（公共域名图，暂用 placeholder 路径）
-// 实际部署时替换为上传到 OSS 后的 CDN URL
+// いらすとや 预设头像（已上传 OSS）
 const PRESET_AVATARS = [
-  { id: 'av-f-yuki',    gender: 'female', style: 'casual',     emoji: '👩',  url: '', label: 'ゆき風' },
-  { id: 'av-f-sakura',  gender: 'female', style: 'formal',     emoji: '👩‍🏫', url: '', label: 'さくら風' },
-  { id: 'av-f-cool',    gender: 'female', style: 'cool',       emoji: '💁‍♀️', url: '', label: 'クール系' },
-  { id: 'av-f-sport',   gender: 'female', style: 'sport',      emoji: '🏃‍♀️', url: '', label: 'スポーツ系' },
-  { id: 'av-m-kenta',   gender: 'male',   style: 'casual',     emoji: '👨',  url: '', label: '健太風' },
-  { id: 'av-m-formal',  gender: 'male',   style: 'formal',     emoji: '👨‍💼', url: '', label: 'スーツ系' },
-  { id: 'av-m-otaku',   gender: 'male',   style: 'casual',     emoji: '🧑‍💻', url: '', label: 'オタク系' },
-  { id: 'av-m-sport',   gender: 'male',   style: 'sport',      emoji: '🏋️‍♂️', url: '', label: 'スポーツ系' },
-  { id: 'av-n-robot',   gender: 'neutral', style: 'robot',     emoji: '🤖',  url: '', label: 'ロボット' },
-  { id: 'av-n-animal',  gender: 'neutral', style: 'animal',    emoji: '🐱',  url: '', label: '猫耳系' },
+  { id: 'boy-01', label: '男の子A', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/boy-01.png' },
+  { id: 'boy-02', label: '男の子B', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/boy-02.png' },
+  { id: 'boy-03', label: '男の子C', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/boy-03.png' },
+  { id: 'boy-04', label: '男の子D', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/boy-04.png' },
+  { id: 'boy-05', label: '男の子E', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/boy-05.png' },
+  { id: 'boy-06', label: '男の子F', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/boy-06.png' },
+  { id: 'girl-01', label: '女の子A', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-01.png' },
+  { id: 'girl-02', label: '女の子B', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-02.png' },
+  { id: 'girl-03', label: '女の子C', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-03.png' },
+  { id: 'girl-04', label: '女の子D', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-04.png' },
+  { id: 'girl-05', label: '女の子E', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-05.png' },
+  { id: 'girl-06', label: '女の子F', url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-06.png' },
 ];
 
 @HTTPController({
