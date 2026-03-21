@@ -1,12 +1,14 @@
 /**
- * TopicService — AI 话题抽卡
+ * TopicService — 话题抽卡（预生成 + 按需随机）
  *
- * 基于角色 memory + 近期新闻 + 对话历史，让 ProductAI 生成 5 张话题卡。
- * 每次调用都动态生成，不做缓存（保证新鲜感）。
+ * draw():      从 DB 读取预生成话题卡，不够时 fallback 到默认
+ * shuffle():   实时 AI 生成 1 张新话题卡（消耗积分）
+ * preGenerate(): 批量预生成话题卡（由 GrowthEngine 调用）
  */
 
 import { ContextProto, AccessLevel } from '@eggjs/tegg';
 import { Context } from 'egg';
+import { v4 as uuidv4 } from 'uuid';
 import { productAIChat, ProductAIConfig } from '../ai/ProductAIService';
 
 export interface TopicCard {
@@ -26,21 +28,104 @@ function boneData(bone: unknown): Record<string, unknown> {
   accessLevel: AccessLevel.PUBLIC,
 })
 export class TopicService {
+  /**
+   * Draw topics: read pre-generated cards from DB, fallback to defaults
+   */
   async draw(ctx: Context, userId: string, characterId: string): Promise<TopicCard[]> {
+    // Read up to 5 unused pre-generated cards
+    const rows = await ctx.model.TopicCard.find({
+      userId,
+      characterId,
+      used: 0,
+    }).order('created_at DESC').limit(5);
+
+    const cards = (rows as unknown[]).map(boneData);
+
+    if (cards.length >= 3) {
+      return cards.map((c) => ({
+        id: c.id as string,
+        text: c.text as string,
+        emoji: (c.emoji as string) || '💬',
+      }));
+    }
+
+    // Not enough pre-generated cards — return defaults
+    return DEFAULT_TOPICS.map((t, i) => ({
+      id: `topic-default-${i}`,
+      text: t.text,
+      emoji: t.emoji,
+    }));
+  }
+
+  /**
+   * Shuffle: AI generates 1 new topic card in real-time (costs credits)
+   */
+  async shuffle(ctx: Context, userId: string, characterId: string): Promise<TopicCard> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const aiConfig: ProductAIConfig = (ctx.app.config as any).bizConfig?.productAi;
 
-    // 1. 加载角色信息
     const charRow = await ctx.model.Character.findOne({ id: characterId });
     if (!charRow) throw new Error('Character not found');
     const character = boneData(charRow);
 
-    // 2. 加载 friendship memory
     const friendRow = await ctx.model.Friendship.findOne({ userId, characterId });
-    const friendship = friendRow ? boneData(friendRow) : null;
-    const memory = (friendship?.memory as string) || null;
+    const memory = friendRow ? (boneData(friendRow).memory as string) || '' : '';
 
-    // 3. 最近对话的最后几条消息
+    const systemPrompt = 'あなたは会話話題生成AIです。1つだけ話題を生成してください。';
+    const userPrompt = `
+キャラクター: ${character.name}（${character.occupation || ''}）
+記憶: ${memory || '（なし）'}
+
+この人と自然に話せる具体的な話題を1つ提案してください。
+JSON形式: { "text": "20字以内", "emoji": "絵文字1つ" }
+JSONのみ返してください。`.trim();
+
+    try {
+      const response = await productAIChat(
+        aiConfig,
+        [{ role: 'user', content: userPrompt }],
+        systemPrompt,
+      );
+
+      const match = response.match(/\{[\s\S]*\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]) as { text: string; emoji: string };
+        const card: TopicCard = {
+          id: `topic-shuffle-${Date.now()}`,
+          text: parsed.text || '何か面白いことある？',
+          emoji: parsed.emoji || '🎲',
+        };
+        return card;
+      }
+    } catch { /* fallback */ }
+
+    return { id: `topic-shuffle-${Date.now()}`, text: '最近何してた？', emoji: '😊' };
+  }
+
+  /**
+   * Pre-generate topic cards for a friendship (called by GrowthEngine)
+   */
+  async preGenerate(ctx: Context, userId: string, characterId: string, aiConfig: ProductAIConfig): Promise<void> {
+    // Check existing unused count
+    const existingRows = await ctx.model.TopicCard.find({
+      userId,
+      characterId,
+      used: 0,
+    });
+    const existingCount = (existingRows as unknown[]).length;
+
+    if (existingCount >= 5) return; // Already enough
+
+    const needed = 5 - existingCount;
+
+    const charRow = await ctx.model.Character.findOne({ id: characterId });
+    if (!charRow) return;
+    const character = boneData(charRow);
+
+    const friendRow = await ctx.model.Friendship.findOne({ userId, characterId });
+    const memory = friendRow ? (boneData(friendRow).memory as string) || '' : '';
+
+    // Load recent dialog
     const convRow = await ctx.model.Conversation.findOne({ userId, characterId });
     let recentDialog = '';
     if (convRow) {
@@ -48,49 +133,23 @@ export class TopicService {
       const recentMessages = await ctx.model.Message.find({
         conversationId: conv.id,
       }).order('created_at DESC').limit(6);
-
       recentDialog = (recentMessages as unknown[])
         .map(boneData)
         .reverse()
         .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => `[${m.role === 'user' ? 'ユーザー' : character.name}]: ${(m.content as string).slice(0, 100)}`)
+        .map((m) => `[${m.role === 'user' ? 'ユーザー' : character.name}]: ${(m.content as string).slice(0, 80)}`)
         .join('\n');
     }
 
-    // 4. 近期新闻标题（3条）
-    const newsRows = await ctx.model.News.find({})
-      .order('published_at DESC')
-      .limit(3);
-    const newsHeadlines = (newsRows as unknown[])
-      .map(boneData)
-      .map((n) => `・${n.title}`)
-      .join('\n');
-
-    // 5. 调用 ProductAI
-    const systemPrompt = `あなたは会話話題生成AIです。与えられた情報をもとに、キャラクターとユーザーの自然な会話のきっかけになる話題カードを生成してください。`;
-
+    const systemPrompt = 'あなたは会話話題生成AIです。JSON配列で返してください。';
     const userPrompt = `
-キャラクター: ${character.name}（${character.occupation || ''}、${character.location || ''}）
-${memory ? `キャラクターのユーザーへの記憶:\n${memory}` : '（まだ深い交流はない）'}
-
+キャラクター: ${character.name}（${character.occupation || ''}）
+記憶: ${memory || '（なし）'}
 最近の会話:
 ${recentDialog || '（まだ会話がない）'}
 
-今日のニュース:
-${newsHeadlines || '（なし）'}
-
-上記をふまえて、このユーザーと ${character.name} が自然に話せる話題を5つ提案してください。
-話題は具体的で会話が広がりやすいものにしてください。
-
-以下のJSON配列形式で返してください（必ず5つ）:
-[
-  { "text": "話題の短いテキスト（20字以内）", "emoji": "絵文字1つ" },
-  ...
-]
-
-JSONのみ返してください。`.trim();
-
-    let topics: TopicCard[] = [];
+${needed}つの話題を提案。JSON配列: [{ "text": "20字以内", "emoji": "絵文字1つ" }, ...]
+JSONのみ。`.trim();
 
     try {
       const response = await productAIChat(
@@ -102,26 +161,20 @@ JSONのみ返してください。`.trim();
       const match = response.match(/\[[\s\S]*\]/);
       if (match) {
         const parsed = JSON.parse(match[0]) as Array<{ text: string; emoji: string }>;
-        topics = parsed.slice(0, 5).map((t, i) => ({
-          id: `topic-${Date.now()}-${i}`,
-          text: t.text || '',
-          emoji: t.emoji || '💬',
-        }));
+        for (const t of parsed.slice(0, needed)) {
+          await ctx.model.TopicCard.create({
+            id: uuidv4(),
+            characterId,
+            userId,
+            text: (t.text || '').slice(0, 100),
+            emoji: t.emoji || '💬',
+            used: 0,
+          });
+        }
       }
-    } catch {
-      // fallback topics
+    } catch (err) {
+      ctx.logger.warn('[TopicService] preGenerate failed:', err);
     }
-
-    // 如果 AI 失败，返回基础 fallback
-    if (topics.length === 0) {
-      topics = DEFAULT_TOPICS.map((t, i) => ({
-        id: `topic-fallback-${i}`,
-        text: t.text,
-        emoji: t.emoji,
-      }));
-    }
-
-    return topics;
   }
 }
 

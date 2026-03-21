@@ -9,6 +9,7 @@
 
 import { Subscription } from 'egg';
 import { productAIChat, ProductAIConfig } from '../module/ai/ProductAIService';
+import { TopicService } from '../module/topic/TopicService';
 
 /** 触发成长的最低消息数 */
 const MIN_MESSAGES_TO_GROW = 3;
@@ -169,5 +170,14 @@ JSONのみ返してください。説明文は不要です。`.trim();
     await ctx.model.Friendship.update({ id: friendshipId }, updates);
 
     ctx.logger.info(`[GrowthEngine] Grew friendship ${friendshipId} (user:${userId}, char:${characterId})`);
+
+    // Pre-generate topic cards alongside soul/memory growth
+    try {
+      const topicService = new TopicService();
+      await topicService.preGenerate(ctx, userId as string, characterId as string, aiConfig);
+      ctx.logger.info(`[GrowthEngine] Pre-generated topics for friendship ${friendshipId}`);
+    } catch (err) {
+      ctx.logger.warn(`[GrowthEngine] Topic pre-generation failed for ${friendshipId}:`, err);
+    }
   }
 }

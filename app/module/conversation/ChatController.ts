@@ -45,8 +45,9 @@ export class ChatController {
     const body = eggCtx.request.body as {
       conversationId?: string;
       message?: string;
+      imageUrl?: string;
     };
-    const { conversationId, message } = body;
+    const { conversationId, message, imageUrl } = body;
     const aiConfig = eggCtx.app.config.bizConfig.ai;
 
     if (!message) {
@@ -132,6 +133,14 @@ export class ChatController {
       role: m.role as 'user' | 'assistant' | 'system',
       content: m.content as string,
     }));
+
+    // Inject image context for vision AI
+    if (imageUrl) {
+      messages.push({
+        role: 'user',
+        content: `[画像が送信されました]\nURL: ${imageUrl}\n\nこの画像について日本語で自然にコメントしてください。`,
+      });
+    }
 
     // Detect news reference in the latest user message and inject full article
     const newsRefMatch = message.match(/^📰\[([^\]]+)\]\s*.+$/);
