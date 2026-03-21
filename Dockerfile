@@ -6,6 +6,9 @@ WORKDIR /app
 # Copy yuujin-prompts package (private, injected by CI/CD)
 COPY yuujin-prompts/ ./yuujin-prompts/
 
+# Compile yuujin-prompts TS → JS (so production runtime can require it)
+RUN npx -y typescript tsc -p yuujin-prompts/tsconfig.json
+
 # Install dependencies (rewrite local dep path for Docker context)
 COPY package.json ./
 RUN sed -i 's|file:../yuujin-prompts|file:./yuujin-prompts|g' package.json && npm install
@@ -22,7 +25,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy yuujin-prompts for runtime
+# Copy compiled yuujin-prompts for runtime
 COPY --from=builder /app/yuujin-prompts ./yuujin-prompts
 
 # Install all dependencies (egg-scripts is in devDeps but needed for production start)
