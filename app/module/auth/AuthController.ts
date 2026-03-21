@@ -23,13 +23,13 @@ export class AuthController {
 
   /** POST /auth/send-code */
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/send-code' })
-  async sendCode(@Context() ctx: EggContext) {
+  async sendCode(
+    @Context() ctx: EggContext,
+    @HTTPBody() body: { email: string; type: string },
+  ) {
     const eggCtx = ctx as unknown as EggCtx;
-    // TEGG @HTTPBody may not work with @Context; read from raw ctx
-    const raw = (ctx as any).request?.body ?? eggCtx?.request?.body ?? {};
-    const email = raw.email as string | undefined;
-    const type = raw.type as string | undefined;
     try {
+      const { email, type } = body;
       if (!email || !type) {
         eggCtx.status = 400;
         return { success: false, error: 'email and type are required' };
@@ -60,13 +60,13 @@ export class AuthController {
 
   /** POST /auth/verify-code */
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/verify-code' })
-  async verifyCode(@Context() ctx: EggContext) {
+  async verifyCode(
+    @Context() ctx: EggContext,
+    @HTTPBody() body: { email: string; code: string; type: string },
+  ) {
     const eggCtx = ctx as unknown as EggCtx;
-    const raw = (ctx as any).request?.body ?? eggCtx?.request?.body ?? {};
-    const email = raw.email as string | undefined;
-    const code = raw.code as string | undefined;
-    const type = raw.type as string | undefined;
     try {
+      const { email, code, type } = body;
       if (!email || !code || !type) {
         return { success: false, error: 'email, code, and type are required' };
       }
@@ -113,13 +113,13 @@ export class AuthController {
 
   /** POST /auth/reset-password */
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/reset-password' })
-  async resetPassword(@Context() ctx: EggContext) {
+  async resetPassword(
+    @Context() ctx: EggContext,
+    @HTTPBody() body: { email: string; code: string; newPassword: string },
+  ) {
     const eggCtx = ctx as unknown as EggCtx;
-    const raw = (ctx as any).request?.body ?? eggCtx?.request?.body ?? {};
-    const email = raw.email as string | undefined;
-    const code = raw.code as string | undefined;
-    const newPassword = raw.newPassword as string | undefined;
     try {
+      const { email, code, newPassword } = body;
       if (!email || !code || !newPassword) {
         return { success: false, error: 'email, code, and newPassword are required' };
       }
@@ -135,13 +135,14 @@ export class AuthController {
 
   /** POST /auth/change-password */
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/change-password' })
-  async changePassword(@Context() ctx: EggContext) {
+  async changePassword(
+    @Context() ctx: EggContext,
+    @HTTPBody() body: { currentPassword: string; newPassword: string },
+  ) {
     const eggCtx = ctx as unknown as EggCtx;
-    const raw = (ctx as any).request?.body ?? eggCtx?.request?.body ?? {};
     const userId = (eggCtx as Record<string, unknown>).userId as string;
-    const currentPassword = raw.currentPassword as string | undefined;
-    const newPassword = raw.newPassword as string | undefined;
     try {
+      const { currentPassword, newPassword } = body;
       if (!currentPassword || !newPassword) {
         return { success: false, error: 'currentPassword and newPassword are required' };
       }
