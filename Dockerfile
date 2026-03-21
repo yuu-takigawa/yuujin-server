@@ -6,10 +6,9 @@ WORKDIR /app
 # Copy yuujin-prompts package (private, injected by CI/CD)
 COPY yuujin-prompts/ ./yuujin-prompts/
 
-# Install dependencies first (cache layer)
-COPY package.json package-lock.json ./
-# Rewrite local dep path for Docker context (both files)
-RUN sed -i 's|file:../yuujin-prompts|file:./yuujin-prompts|g' package.json package-lock.json && npm ci
+# Install dependencies (rewrite local dep path for Docker context)
+COPY package.json ./
+RUN sed -i 's|file:../yuujin-prompts|file:./yuujin-prompts|g' package.json && npm install
 
 # Copy source and build
 COPY . .
@@ -27,9 +26,9 @@ WORKDIR /app
 COPY --from=builder /app/yuujin-prompts ./yuujin-prompts
 
 # Install all dependencies (egg-scripts is in devDeps but needed for production start)
-COPY package.json package-lock.json ./
-RUN sed -i 's|file:../yuujin-prompts|file:./yuujin-prompts|g' package.json package-lock.json && \
-    npm ci && npm cache clean --force
+COPY package.json ./
+RUN sed -i 's|file:../yuujin-prompts|file:./yuujin-prompts|g' package.json && \
+    npm install && npm cache clean --force
 
 # Egg.js + TEGG requires full app/ directory structure at runtime
 COPY --from=builder /app/app ./app
