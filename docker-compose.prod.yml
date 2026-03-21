@@ -36,6 +36,11 @@ services:
       - OSS_CDN_DOMAIN=${OSS_CDN_DOMAIN:-}
       - OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID:-}
       - OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET:-}
+      - SMTP_HOST=${SMTP_HOST:-smtpdm.aliyun.com}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@yuujin.cc}
     depends_on:
       mysql:
         condition: service_healthy
