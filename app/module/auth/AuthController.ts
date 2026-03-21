@@ -2,6 +2,7 @@ import {
   HTTPController,
   HTTPMethod,
   HTTPMethodEnum,
+  HTTPBody,
   Context,
   Inject,
 } from '@eggjs/tegg';
@@ -24,9 +25,11 @@ export class AuthController {
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/send-code' })
   async sendCode(@Context() ctx: EggContext) {
     const eggCtx = ctx as unknown as EggCtx;
-    const body = eggCtx.request.body as { email?: string; type?: string };
+    // TEGG @HTTPBody may not work with @Context; read from raw ctx
+    const raw = (ctx as any).request?.body ?? eggCtx?.request?.body ?? {};
+    const email = raw.email as string | undefined;
+    const type = raw.type as string | undefined;
     try {
-      const { email, type } = body;
       if (!email || !type) {
         eggCtx.status = 400;
         return { success: false, error: 'email and type are required' };
@@ -59,9 +62,11 @@ export class AuthController {
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/verify-code' })
   async verifyCode(@Context() ctx: EggContext) {
     const eggCtx = ctx as unknown as EggCtx;
-    const body = eggCtx.request.body as { email?: string; code?: string; type?: string };
+    const raw = (ctx as any).request?.body ?? eggCtx?.request?.body ?? {};
+    const email = raw.email as string | undefined;
+    const code = raw.code as string | undefined;
+    const type = raw.type as string | undefined;
     try {
-      const { email, code, type } = body;
       if (!email || !code || !type) {
         return { success: false, error: 'email, code, and type are required' };
       }
@@ -74,15 +79,16 @@ export class AuthController {
 
   /** POST /auth/register */
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/register' })
-  async register(@Context() ctx: EggContext) {
-    const eggCtx = ctx as unknown as EggCtx;
-    const body = eggCtx.request.body as { email?: string; password?: string; name?: string; code?: string };
+  async register(
+    @Context() ctx: EggContext,
+    @HTTPBody() body: { email: string; password: string; name: string; code: string },
+  ) {
     try {
       const result = await this.authService.register(
-        eggCtx,
-        body.email || '',
-        body.password || '',
-        body.name || '',
+        ctx as unknown as EggCtx,
+        body.email,
+        body.password,
+        body.name,
         body.code,
       );
       return { success: true, data: result };
@@ -93,11 +99,12 @@ export class AuthController {
 
   /** POST /auth/login */
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/login' })
-  async login(@Context() ctx: EggContext) {
-    const eggCtx = ctx as unknown as EggCtx;
-    const body = eggCtx.request.body as { email?: string; password?: string };
+  async login(
+    @Context() ctx: EggContext,
+    @HTTPBody() body: { email: string; password: string },
+  ) {
     try {
-      const result = await this.authService.login(eggCtx, body.email || '', body.password || '');
+      const result = await this.authService.login(ctx as unknown as EggCtx, body.email, body.password);
       return { success: true, data: result };
     } catch (err: unknown) {
       return { success: false, error: (err as Error).message };
@@ -108,9 +115,11 @@ export class AuthController {
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/reset-password' })
   async resetPassword(@Context() ctx: EggContext) {
     const eggCtx = ctx as unknown as EggCtx;
-    const body = eggCtx.request.body as { email?: string; code?: string; newPassword?: string };
+    const raw = (ctx as any).request?.body ?? eggCtx?.request?.body ?? {};
+    const email = raw.email as string | undefined;
+    const code = raw.code as string | undefined;
+    const newPassword = raw.newPassword as string | undefined;
     try {
-      const { email, code, newPassword } = body;
       if (!email || !code || !newPassword) {
         return { success: false, error: 'email, code, and newPassword are required' };
       }
@@ -128,10 +137,11 @@ export class AuthController {
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/change-password' })
   async changePassword(@Context() ctx: EggContext) {
     const eggCtx = ctx as unknown as EggCtx;
-    const body = eggCtx.request.body as { currentPassword?: string; newPassword?: string };
+    const raw = (ctx as any).request?.body ?? eggCtx?.request?.body ?? {};
     const userId = (eggCtx as Record<string, unknown>).userId as string;
+    const currentPassword = raw.currentPassword as string | undefined;
+    const newPassword = raw.newPassword as string | undefined;
     try {
-      const { currentPassword, newPassword } = body;
       if (!currentPassword || !newPassword) {
         return { success: false, error: 'currentPassword and newPassword are required' };
       }
@@ -147,11 +157,12 @@ export class AuthController {
 
   /** POST /auth/refresh */
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/refresh' })
-  async refresh(@Context() ctx: EggContext) {
-    const eggCtx = ctx as unknown as EggCtx;
-    const body = eggCtx.request.body as { refreshToken?: string };
+  async refresh(
+    @Context() ctx: EggContext,
+    @HTTPBody() body: { refreshToken: string },
+  ) {
     try {
-      const result = await this.authService.refresh(eggCtx, body.refreshToken || '');
+      const result = await this.authService.refresh(ctx as unknown as EggCtx, body.refreshToken);
       return { success: true, data: result };
     } catch (err: unknown) {
       return { success: false, error: (err as Error).message };
