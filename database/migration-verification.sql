@@ -6,12 +6,12 @@ CREATE TABLE IF NOT EXISTS verification_codes (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   email VARCHAR(255) NOT NULL,
   code VARCHAR(6) NOT NULL,
-  type ENUM('register', 'reset_password') NOT NULL,
+  code_type ENUM('register', 'reset_password') NOT NULL,
   expires_at DATETIME NOT NULL,
   used TINYINT(1) NOT NULL DEFAULT 0,
   attempts INT NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_email_type (email, type),
+  INDEX idx_email_type (email, code_type),
   INDEX idx_expires_at (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

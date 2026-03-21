@@ -12,8 +12,8 @@ export default class VerificationCode extends Bone {
   @Column({ allowNull: false })
   code!: string;
 
-  @Column({ allowNull: false })
-  type!: string;
+  @Column({ name: 'code_type', allowNull: false })
+  codeType!: string;
 
   @Column({ name: 'expires_at', allowNull: false })
   expiresAt!: Date;

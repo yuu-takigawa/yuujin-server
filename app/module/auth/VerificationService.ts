@@ -24,7 +24,7 @@ export class VerificationService {
     // Rate limit: 60s cooldown per email+type
     const recent = await (ctx.model as any).VerificationCode.findOne({
       email,
-      type,
+      codeType: type,
       createdAt: { $gte: new Date(Date.now() - 60_000) },
     });
     if (recent) {
@@ -47,7 +47,7 @@ export class VerificationService {
     await (ctx.model as any).VerificationCode.create({
       email,
       code,
-      type,
+      codeType: type,
       expiresAt: new Date(Date.now() + 10 * 60_000), // 10 minutes
     });
 
