@@ -69,7 +69,7 @@ export class VerificationService {
     // Find the latest unused, unexpired code
     const record = await (ctx.model as any).VerificationCode.findOne({
       email,
-      type,
+      codeType: type,
       used: 0,
       expiresAt: { $gte: new Date() },
     }).order('id DESC');
