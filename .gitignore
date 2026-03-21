@@ -145,3 +145,6 @@ typings/
 
 PROGRESS.md
 .egg/
+
+# Private prompts (local dependency, not committed)
+yuujin-prompts/

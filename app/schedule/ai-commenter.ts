@@ -10,6 +10,7 @@
 
 import { Subscription } from 'egg';
 import { productAIChat, ProductAIConfig } from '../module/ai/ProductAIService';
+import { buildAICommentPrompt } from 'yuujin-prompts';
 import { v4 as uuidv4 } from 'uuid';
 
 const PRESET_CHARACTER_IDS = [
@@ -100,13 +101,11 @@ export default class AICommenter extends Subscription {
     article: Record<string, unknown>,
     character: Record<string, unknown>,
   ) {
-    const systemPrompt = `あなたは ${character.name} です。${character.bio || ''}
-SNSの短い投稿のように、ニュースへのリアクションを一言コメントしてください。
-- 自分のキャラクターの口調を使う
-- 50字以内で
-- ハッシュタグ不要、絵文字1〜2個OK`;
-
-    const userPrompt = `ニュース: 「${article.title}」\nこのニュースへのあなたのコメントを教えてください。`;
+    const { system: systemPrompt, user: userPrompt } = buildAICommentPrompt(
+      character.name as string,
+      (character.bio as string) || '',
+      article.title as string,
+    );
 
     try {
       const content = await productAIChat(

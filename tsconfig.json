@@ -23,7 +23,6 @@
   "include": [
     "app/**/*.ts",
     "config/**/*.ts",
-    "prompts/**/*.ts",
     "scripts/**/*.ts",
     "typings/**/*.d.ts"
   ],

@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { CommentService } from './CommentService';
 import { streamProductAIChat, ProductAIConfig } from '../ai/ProductAIService';
 import { buildSystemPrompt } from '../conversation/lib/prompt-loader';
+import { COMMENT_REPLY_TASK, buildCommentReplyUserPrompt } from 'yuujin-prompts';
 
 function boneData(bone: unknown): Record<string, unknown> {
   if (bone && typeof (bone as { getRaw?: () => Record<string, unknown> }).getRaw === 'function') {
@@ -142,14 +143,7 @@ export class CommentController {
       const jpLevel = (user?.jpLevel as string) || (user?.jp_level as string) || undefined;
 
       const basePrompt = buildSystemPrompt({ soul, memory, userLevel: jpLevel });
-      const systemPrompt = `${basePrompt}
-
-## 現在のタスク：ニュースコメント欄で返信
-ニュース記事のコメント欄でユーザーに返信してください。
-- 自分のキャラクターの口調を使う
-- 相手のコメントに対して自然に反応する
-- 100字以内で
-- ハッシュタグ不要、絵文字1〜2個OK`;
+      const systemPrompt = `${basePrompt}${COMMENT_REPLY_TASK}`;
 
       // 收集文章内容摘要 + 评论区上下文
       const articleContent = (article.content as string || '').slice(0, 500);
@@ -158,16 +152,12 @@ export class CommentController {
         .map((c) => `${c.isAi ? '(AI)' : '(User)'}: ${(c.content as string).slice(0, 100)}`)
         .join('\n');
 
-      const userPrompt = `## ニュース記事
-タイトル: 「${article.title}」
-本文（抜粋）: ${articleContent}
-
-## コメント欄の流れ
-${commentContext || '（まだコメントはありません）'}
-
-## あなたへの返信リクエスト
-相手のコメント: 「${userComment.content}」
-このコメントへの返信を書いてください。`;
+      const userPrompt = buildCommentReplyUserPrompt(
+        article.title as string,
+        articleContent,
+        commentContext,
+        userComment.content as string,
+      );
 
       let fullContent = '';
       const generator = streamProductAIChat(

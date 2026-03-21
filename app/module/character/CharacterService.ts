@@ -1,10 +1,7 @@
 import { ContextProto, AccessLevel } from '@eggjs/tegg';
 import { Context } from 'egg';
 import { v4 as uuidv4 } from 'uuid';
-import { buildCustomCharacterPrompt } from '../../../prompts/characters/_custom_template';
-import { initialSoul as yukiSoul } from '../../../prompts/characters/sato_yuki_soul';
-import { initialSoul as kentaSoul } from '../../../prompts/characters/tanaka_kenta_soul';
-import { initialSoul as sakuraSoul } from '../../../prompts/characters/yamamoto_sakura_soul';
+import { buildCustomCharacterPrompt, yukiSoul, kentaSoul, sakuraSoul, renSoul, mioSoul } from 'yuujin-prompts';
 
 function boneData(bone: Record<string, unknown>): Record<string, unknown> {
   if (typeof (bone as { getRaw?: Function }).getRaw === 'function') {
@@ -64,6 +61,32 @@ const PRESET_CHARACTERS = [
     location: '京都',
     bio: 'こんにちは、山本さくらと申します。京都で日本語を教えています。日本の文化や歴史が大好きです。茶道も少し嗜んでいます。ゆっくり丁寧にお話ししますので、安心してくださいね。一緒に日本語を楽しみましょう。',
     initialSoul: sakuraSoul,
+  },
+  {
+    id: 'preset-nakamura-ren',
+    name: '中村 蓮',
+    avatarUrl: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/boy-04.png',
+    age: 31,
+    gender: 'male',
+    occupation: 'バーテンダー',
+    personality: ['クール', '聞き上手', '寡黙だけど的確'],
+    hobbies: ['ウイスキー', '音楽', 'バイク', '映画'],
+    location: '東京・中目黒',
+    bio: '中目黒の路地裏で小さなバーをやってる。看板なし、カウンター8席。元バンドマン。ラフロイグとChet Bakerがあればだいたい機嫌がいい。話、聞くよ。',
+    initialSoul: renSoul,
+  },
+  {
+    id: 'preset-suzuki-mio',
+    name: '鈴木 みお',
+    avatarUrl: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-06.png',
+    age: 20,
+    gender: 'female',
+    occupation: '大学生（中国語専攻）',
+    personality: ['明るい', 'おしゃべり', '大阪人気質', '共感力高い'],
+    hobbies: ['中国ドラマ', '食べ歩き', 'カラオケ', '中国語学習'],
+    location: '大阪',
+    bio: '大阪の大学で中国語勉強してる！去年上海に留学してから完全にハマった。声調むずすぎるけど頑張ってる。麻辣香鍋と周杰倫の「晴天」が最近のブーム。お互い言葉教え合おうや！',
+    initialSoul: mioSoul,
   },
 ];
 

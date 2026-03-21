@@ -10,6 +10,7 @@ import { ContextProto, AccessLevel } from '@eggjs/tegg';
 import { Context } from 'egg';
 import { v4 as uuidv4 } from 'uuid';
 import { productAIChat, ProductAIConfig } from '../ai/ProductAIService';
+import { TOPIC_SYSTEM_PROMPT, TOPIC_SHUFFLE_SYSTEM_PROMPT, buildTopicDrawPrompt, buildTopicShufflePrompt } from 'yuujin-prompts';
 
 export interface TopicCard {
   id: string;
@@ -71,14 +72,11 @@ export class TopicService {
     const friendRow = await ctx.model.Friendship.findOne({ userId, characterId });
     const memory = friendRow ? (boneData(friendRow).memory as string) || '' : '';
 
-    const systemPrompt = 'あなたは会話話題生成AIです。1つだけ話題を生成してください。';
-    const userPrompt = `
-キャラクター: ${character.name}（${character.occupation || ''}）
-記憶: ${memory || '（なし）'}
-
-この人と自然に話せる具体的な話題を1つ提案してください。
-JSON形式: { "text": "20字以内", "emoji": "絵文字1つ" }
-JSONのみ返してください。`.trim();
+    const systemPrompt = TOPIC_SHUFFLE_SYSTEM_PROMPT;
+    const userPrompt = buildTopicShufflePrompt(
+      { name: character.name as string, occupation: character.occupation as string },
+      memory,
+    );
 
     try {
       const response = await productAIChat(
@@ -141,15 +139,11 @@ JSONのみ返してください。`.trim();
         .join('\n');
     }
 
-    const systemPrompt = 'あなたは会話話題生成AIです。JSON配列で返してください。';
-    const userPrompt = `
-キャラクター: ${character.name}（${character.occupation || ''}）
-記憶: ${memory || '（なし）'}
-最近の会話:
-${recentDialog || '（まだ会話がない）'}
-
-${needed}つの話題を提案。JSON配列: [{ "text": "20字以内", "emoji": "絵文字1つ" }, ...]
-JSONのみ。`.trim();
+    const systemPrompt = TOPIC_SYSTEM_PROMPT;
+    const userPrompt = buildTopicDrawPrompt(
+      { name: character.name as string, occupation: character.occupation as string },
+      memory, recentDialog, needed,
+    );
 
     try {
       const response = await productAIChat(

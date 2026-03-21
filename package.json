@@ -19,6 +19,7 @@
     "seed": "ts-node scripts/seed.ts"
   },
   "dependencies": {
+    "yuujin-prompts": "file:../yuujin-prompts",
     "@anthropic-ai/sdk": "^0.78.0",
     "@eggjs/tegg": "^3.72.0",
     "@eggjs/tegg-config": "^3.72.0",

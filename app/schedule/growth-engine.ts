@@ -9,6 +9,7 @@
 
 import { Subscription } from 'egg';
 import { productAIChat, ProductAIConfig } from '../module/ai/ProductAIService';
+import { buildGrowthPrompt } from 'yuujin-prompts';
 import { TopicService } from '../module/topic/TopicService';
 
 /** 触发成长的最低消息数 */
@@ -119,29 +120,12 @@ export default class GrowthEngine extends Subscription {
       .map((m) => `[${m.role === 'user' ? 'ユーザー' : charData.name}]: ${m.content}`)
       .join('\n');
 
-    const systemPrompt = `あなたは ${charData.name} というキャラクターです。`;
-
-    const userPrompt = `
-以下は、あなた（${charData.name}）とあるユーザーとの最近の会話記録です。
-
---- 会話記録 ---
-${dialogText}
---- 会話記録終わり ---
-
-現在のSOUL（このユーザーへの向き合い方）:
-${soul || '（まだ形成されていない）'}
-
-現在のMEMORY（このユーザーについての記憶）:
-${memory || '（まだ記憶がない）'}
-
-上記の会話をふまえて、以下のJSON形式で更新してください：
-
-{
-  "soul": "（${charData.name}がこのユーザーに対して感じている印象・態度・感情の変化を自然な日本語で300字以内に。初回なら初期印象を）",
-  "memory": "（${charData.name}がこのユーザーについて覚えておきたい重要な事実・好み・出来事を箇条書きで500字以内に）"
-}
-
-JSONのみ返してください。説明文は不要です。`.trim();
+    const { system: systemPrompt, user: userPrompt } = buildGrowthPrompt(
+      charData.name as string,
+      dialogText,
+      soul as string | null,
+      memory as string | null,
+    );
 
     const responseText = await productAIChat(
       aiConfig,

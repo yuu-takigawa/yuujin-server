@@ -1,9 +1,7 @@
 import * as dotenv from 'dotenv';
 import * as mysql from 'mysql2/promise';
 import { v4 as uuidv4 } from 'uuid';
-import { initialSoul as yukiSoul } from '../prompts/characters/sato_yuki_soul';
-import { initialSoul as kentaSoul } from '../prompts/characters/tanaka_kenta_soul';
-import { initialSoul as sakuraSoul } from '../prompts/characters/yamamoto_sakura_soul';
+import { yukiSoul, kentaSoul, sakuraSoul, renSoul, mioSoul } from 'yuujin-prompts';
 
 dotenv.config();
 
@@ -18,9 +16,25 @@ const PRESET_CHARACTERS = [
     personality: JSON.stringify(['明るい', '優しい', '話好き']),
     hobbies: JSON.stringify(['カフェ巡り', '写真撮影', 'スイーツ作り']),
     location: '東京・下北沢',
-    bio: 'はじめまして！佐藤ゆきです。下北沢のカフェで働いています。おしゃべりが大好きで、いろんな話をするのが楽しみです。日本語の練習、一緒に頑張りましょう！気軽に話しかけてくださいね。',
+    bio: '下北沢のカフェで気づいたら3年目。昨日お客さんの犬にラテアート褒められた（犬に）。散歩と写真が好きで、スマホの容量はいつも空の写真でパンパン。甘いもの一緒に食べに行かない？',
     initial_soul: yukiSoul,
     is_preset: 1,
+    display_order: 1,
+  },
+  {
+    id: 'preset-suzuki-mio',
+    name: '鈴木 みお',
+    avatar_url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/girl-06.png',
+    age: 20,
+    gender: 'female',
+    occupation: '大学生（中国語専攻）',
+    personality: JSON.stringify(['明るい', 'おしゃべり', '大阪人気質', '共感力高い']),
+    hobbies: JSON.stringify(['中国ドラマ', '食べ歩き', 'カラオケ', '中国語学習']),
+    location: '大阪',
+    bio: '大阪の大学で中国語勉強してる！去年上海に留学してから完全にハマった。声調むずすぎるけど頑張ってる。麻辣香鍋と周杰倫の「晴天」が最近のブーム。お互い言葉教え合おうや！',
+    initial_soul: mioSoul,
+    is_preset: 1,
+    display_order: 2,
   },
   {
     id: 'preset-tanaka-kenta',
@@ -32,9 +46,10 @@ const PRESET_CHARACTERS = [
     personality: JSON.stringify(['真面目', '親切', 'オタク気質']),
     hobbies: JSON.stringify(['プログラミング', 'アニメ', 'ゲーム']),
     location: '東京・秋葉原',
-    bio: 'やあ！田中健太です。IT企業でエンジニアをしています。アニメやゲームが好きで、秋葉原によく行きます。技術の話からサブカルの話まで、何でも話しましょう！日本語、一緒に楽しく学びましょう。',
+    bio: '秋葉原のIT企業で毎日コード書いてる。先週バグ修正に3日かかって発狂しかけた。アニメは今期だけで12本追ってる。推しキャラの話始めると止まらないから気をつけて。',
     initial_soul: kentaSoul,
     is_preset: 1,
+    display_order: 3,
   },
   {
     id: 'preset-yamamoto-sakura',
@@ -46,9 +61,25 @@ const PRESET_CHARACTERS = [
     personality: JSON.stringify(['知的', '穏やか', '忍耐強い']),
     hobbies: JSON.stringify(['読書', '茶道', '旅行']),
     location: '京都',
-    bio: 'こんにちは、山本さくらと申します。京都で日本語を教えています。日本の文化や歴史が大好きです。茶道も少し嗜んでいます。ゆっくり丁寧にお話ししますので、安心してくださいね。一緒に日本語を楽しみましょう。',
+    bio: '京都で日本語を教えて10年。先月の茶道のお稽古で正座しすぎて立てなくなった。旅先では必ず古本屋に寄る癖がある。日本のこと、何でも聞いてくださいね。',
     initial_soul: sakuraSoul,
     is_preset: 1,
+    display_order: 4,
+  },
+  {
+    id: 'preset-nakamura-ren',
+    name: '中村 蓮',
+    avatar_url: 'https://yuujin-assets.oss-cn-hangzhou.aliyuncs.com/avatars/presets/boy-04.png',
+    age: 31,
+    gender: 'male',
+    occupation: 'バーテンダー',
+    personality: JSON.stringify(['クール', '聞き上手', '寡黙だけど的確']),
+    hobbies: JSON.stringify(['ウイスキー', '音楽', 'バイク', '映画']),
+    location: '東京・中目黒',
+    bio: '中目黒の路地裏で小さなバーをやってる。看板なし、カウンター8席。元バンドマン。ラフロイグとChet Bakerがあればだいたい機嫌がいい。話、聞くよ。',
+    initial_soul: renSoul,
+    is_preset: 1,
+    display_order: 5,
   },
 ];
 

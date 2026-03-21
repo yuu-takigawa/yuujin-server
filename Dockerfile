@@ -3,36 +3,40 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Copy yuujin-prompts package (private, injected by CI/CD)
+COPY yuujin-prompts/ ./yuujin-prompts/
+
 # Install dependencies first (cache layer)
 COPY package.json package-lock.json ./
-RUN npm ci
+# Rewrite local dep path for Docker context
+RUN sed -i 's|file:../yuujin-prompts|file:./yuujin-prompts|' package.json && npm ci
 
 # Copy source and build
 COPY . .
 RUN npm run build && \
     # Copy compiled JS back to source dirs so egg-scripts can find them
     cp -r dist/config/*.js config/ && \
-    cp -r dist/app/ app-compiled/ && \
-    cp -r dist/prompts/ prompts-compiled/
+    cp -r dist/app/ app-compiled/
 
 # ---- Production Stage ----
 FROM node:20-alpine
 
 WORKDIR /app
 
+# Copy yuujin-prompts for runtime
+COPY --from=builder /app/yuujin-prompts ./yuujin-prompts
+
 # Install all dependencies (egg-scripts is in devDeps but needed for production start)
 COPY package.json package-lock.json ./
-RUN npm ci && npm cache clean --force
+RUN sed -i 's|file:../yuujin-prompts|file:./yuujin-prompts|' package.json && \
+    npm ci && npm cache clean --force
 
 # Egg.js + TEGG requires full app/ directory structure at runtime
-# (TEGG scans modules, middleware, models at startup)
 COPY --from=builder /app/app ./app
 COPY --from=builder /app/config ./config
 # Overlay compiled JS files so egg-scripts loads them in production
 COPY --from=builder /app/app-compiled/ ./app/
 COPY --from=builder /app/database ./database
-COPY --from=builder /app/prompts ./prompts
-COPY --from=builder /app/prompts-compiled/ ./prompts/
 COPY --from=builder /app/scripts ./scripts
 # Overlay compiled scripts JS
 COPY --from=builder /app/dist/scripts/ ./scripts/

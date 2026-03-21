@@ -10,6 +10,7 @@ import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
 import { CharacterService } from './CharacterService';
 import { streamProductAIChat, ProductAIConfig } from '../ai/ProductAIService';
+import { buildGenerateBioPrompt } from 'yuujin-prompts';
 import { PassThrough } from 'stream';
 
 @HTTPController({
@@ -74,22 +75,15 @@ export class CharacterController {
       return { success: false, error: 'AI service not configured' };
     }
 
-    const prompt = `以下の情報を持つキャラクターの自己紹介文を書いてください。
-
-【重要ルール】
-- そのキャラらしい口調・テンションで
-- 100〜150字
-- 名前・職業・住所・趣味をそのまま羅列するのはNG。プロフィール情報の繰り返しではなく、人柄が伝わるエピソードや一言を入れる
-- 例：「最近○○にハマってて〜」「実は△△が苦手で…」「□□に住んでるけど、よく××に出没してます」のような生き生きした表現
-- 自己紹介文のみ出力（余計な説明不要）
-
-名前: ${body.name || '不明'}
-年齢: ${body.age || '不明'}
-性別: ${body.gender || '不明'}
-職業: ${body.occupation || '不明'}
-性格: ${Array.isArray(body.personality) ? body.personality.join('、') : body.personality || '不明'}
-趣味: ${Array.isArray(body.hobbies) ? body.hobbies.join('、') : body.hobbies || '不明'}
-住所: ${body.location || '不明'}`;
+    const { system: bioSystemPrompt, user: bioUserPrompt } = buildGenerateBioPrompt({
+      name: body.name as string,
+      age: body.age,
+      gender: body.gender as string,
+      occupation: body.occupation as string,
+      personality: body.personality as string[] | string,
+      hobbies: body.hobbies as string[] | string,
+      location: body.location as string,
+    });
 
     // SSE 流式输出
     eggCtx.set('Content-Type', 'text/event-stream');
@@ -106,7 +100,7 @@ export class CharacterController {
 
     try {
       writeSSE({ type: 'start' });
-      const generator = streamProductAIChat(aiConfig, [{ role: 'user', content: prompt }]);
+      const generator = streamProductAIChat(aiConfig, [{ role: 'user', content: bioUserPrompt }], bioSystemPrompt);
       for await (const delta of generator) {
         writeSSE({ type: 'delta', content: delta });
       }
