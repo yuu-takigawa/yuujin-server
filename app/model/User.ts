@@ -9,6 +9,9 @@ export default class User extends Bone {
   @Column({ allowNull: false })
   email!: string;
 
+  @Column()
+  phone!: string;
+
   @Column({ name: 'password_hash', allowNull: false })
   passwordHash!: string;
 

@@ -1,11 +1,10 @@
-import { ContextProto, AccessLevel } from '@eggjs/tegg';
+import { ContextProto, AccessLevel, Inject } from '@eggjs/tegg';
 import { Context } from 'egg';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { signToken, JwtPayload } from './lib/jwt';
+import { VerificationService } from './VerificationService';
 
-// Helper to extract attributes from a Leoric Bone instance
-// TypeScript class fields shadow Leoric's prototype getters, so we use getRaw()
 function boneData(bone: Record<string, unknown>): Record<string, unknown> {
   if (typeof (bone as { getRaw?: Function }).getRaw === 'function') {
     return (bone as { getRaw: () => Record<string, unknown> }).getRaw();
@@ -17,8 +16,17 @@ function boneData(bone: Record<string, unknown>): Record<string, unknown> {
   accessLevel: AccessLevel.PUBLIC,
 })
 export class AuthService {
-  async register(ctx: Context, email: string, password: string, name: string) {
+  @Inject()
+  verificationService!: VerificationService;
+
+  async register(ctx: Context, email: string, password: string, name: string, code?: string) {
     const jwtConfig = ctx.app.config.bizConfig.jwt;
+
+    // Verify email code (required)
+    if (!code) {
+      throw new Error('認証コードを入力してください');
+    }
+    await this.verificationService.verify(ctx, email, code, 'register');
 
     const existing = await ctx.model.User.findOne({ email });
     if (existing) {
@@ -54,13 +62,13 @@ export class AuthService {
 
     const user = await ctx.model.User.findOne({ email });
     if (!user) {
-      throw new Error('Invalid email or password');
+      throw new Error('メールアドレスまたはパスワードが間違っています');
     }
 
     const data = boneData(user);
     const valid = await bcrypt.compare(password, data.passwordHash as string);
     if (!valid) {
-      throw new Error('Invalid email or password');
+      throw new Error('メールアドレスまたはパスワードが間違っています');
     }
 
     const payload: JwtPayload = { userId: data.id as string, email: data.email as string };
@@ -72,6 +80,35 @@ export class AuthService {
       token,
       refreshToken,
     };
+  }
+
+  async resetPassword(ctx: Context, email: string, code: string, newPassword: string) {
+    // Verify code
+    await this.verificationService.verify(ctx, email, code, 'reset_password');
+
+    // Update password
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const user = await ctx.model.User.findOne({ email });
+    if (!user) {
+      throw new Error('ユーザーが見つかりません');
+    }
+    await ctx.model.User.update({ email }, { passwordHash });
+  }
+
+  async changePassword(ctx: Context, userId: string, currentPassword: string, newPassword: string) {
+    const user = await ctx.model.User.findOne({ id: userId });
+    if (!user) {
+      throw new Error('ユーザーが見つかりません');
+    }
+
+    const data = boneData(user);
+    const valid = await bcrypt.compare(currentPassword, data.passwordHash as string);
+    if (!valid) {
+      throw new Error('現在のパスワードが正しくありません');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await ctx.model.User.update({ id: userId }, { passwordHash });
   }
 
   async refresh(ctx: Context, refreshToken: string) {

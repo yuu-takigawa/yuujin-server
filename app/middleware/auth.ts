@@ -1,7 +1,7 @@
 import { Context } from 'egg';
 import { verifyToken } from '../module/auth/lib/jwt';
 
-const PUBLIC_PATHS = ['/auth/register', '/auth/login', '/auth/refresh'];
+const PUBLIC_PATHS = ['/auth/register', '/auth/login', '/auth/refresh', '/auth/send-code', '/auth/verify-code', '/auth/reset-password'];
 
 export default function authMiddleware(): (ctx: Context, next: () => Promise<void>) => Promise<void> {
   return async function auth(ctx: Context, next: () => Promise<void>) {

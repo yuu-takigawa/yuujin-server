@@ -105,6 +105,16 @@ export default () => {
       password: process.env.REDIS_PASSWORD || '',
       db: Number(process.env.REDIS_DB) || 0,
     },
+    smtp: {
+      host: process.env.SMTP_HOST || 'smtpdm.aliyun.com',
+      port: Number(process.env.SMTP_PORT) || 465,
+      secure: true,
+      auth: {
+        user: process.env.SMTP_USER || '',
+        pass: process.env.SMTP_PASS || '',
+      },
+      from: process.env.SMTP_FROM || 'noreply@yuujin.cc',
+    },
   };
 
   return config;
