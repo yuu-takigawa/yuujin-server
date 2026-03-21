@@ -50,7 +50,7 @@ export class CreditController {
     }
   }
 
-  /** POST /subscriptions/upgrade  body: { tier: 'basic'|'premium' } */
+  /** POST /subscriptions/upgrade  body: { tier: 'pro'|'max' } */
   @HTTPMethod({
     method: HTTPMethodEnum.POST,
     path: '/subscriptions/upgrade',
@@ -60,10 +60,10 @@ export class CreditController {
     const userId = (eggCtx as Record<string, unknown>).userId as string;
     const body = eggCtx.request.body as { tier?: string };
 
-    const VALID_TIERS = ['basic', 'premium'];
+    const VALID_TIERS = ['pro', 'max'];
     if (!body.tier || !VALID_TIERS.includes(body.tier)) {
       eggCtx.status = 400;
-      eggCtx.body = { success: false, error: 'tier must be basic or premium' };
+      eggCtx.body = { success: false, error: 'tier must be pro or max' };
       return;
     }
 

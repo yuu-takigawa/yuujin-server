@@ -12,8 +12,8 @@ function boneData(bone: Record<string, unknown>): Record<string, unknown> {
 // Membership tier weight for comparison
 const TIER_WEIGHT: Record<string, number> = {
   free: 0,
-  basic: 1,
-  premium: 2,
+  pro: 1,
+  max: 2,
   admin: 3,
 };
 
