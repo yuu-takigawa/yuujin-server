@@ -28,8 +28,9 @@ export class AuthController {
     @HTTPBody() body: { email: string; type: string },
   ) {
     const eggCtx = ctx as unknown as EggCtx;
+    const b = body || (eggCtx as any).request?.body || {};
     try {
-      const { email, type } = body;
+      const { email, type } = b;
       if (!email || !type) {
         eggCtx.status = 400;
         return { success: false, error: 'email and type are required' };
@@ -65,8 +66,9 @@ export class AuthController {
     @HTTPBody() body: { email: string; code: string; type: string },
   ) {
     const eggCtx = ctx as unknown as EggCtx;
+    const b = body || (eggCtx as any).request?.body || {};
     try {
-      const { email, code, type } = body;
+      const { email, code, type } = b;
       if (!email || !code || !type) {
         return { success: false, error: 'email, code, and type are required' };
       }
@@ -118,8 +120,9 @@ export class AuthController {
     @HTTPBody() body: { email: string; code: string; newPassword: string },
   ) {
     const eggCtx = ctx as unknown as EggCtx;
+    const b = body || (eggCtx as any).request?.body || {};
     try {
-      const { email, code, newPassword } = body;
+      const { email, code, newPassword } = b;
       if (!email || !code || !newPassword) {
         return { success: false, error: 'email, code, and newPassword are required' };
       }
@@ -140,9 +143,10 @@ export class AuthController {
     @HTTPBody() body: { currentPassword: string; newPassword: string },
   ) {
     const eggCtx = ctx as unknown as EggCtx;
+    const b = body || (eggCtx as any).request?.body || {};
     const userId = (eggCtx as Record<string, unknown>).userId as string;
     try {
-      const { currentPassword, newPassword } = body;
+      const { currentPassword, newPassword } = b;
       if (!currentPassword || !newPassword) {
         return { success: false, error: 'currentPassword and newPassword are required' };
       }
