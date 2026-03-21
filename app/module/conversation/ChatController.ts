@@ -45,9 +45,8 @@ export class ChatController {
     const body = eggCtx.request.body as {
       conversationId?: string;
       message?: string;
-      modelId?: string;
     };
-    const { conversationId, message, modelId } = body;
+    const { conversationId, message } = body;
     const aiConfig = eggCtx.app.config.bizConfig.ai;
 
     if (!message) {
@@ -71,7 +70,7 @@ export class ChatController {
       isAdmin: boolean;
     };
     try {
-      chatModel = await this.creditService.validateChatCredits(eggCtx, userId, modelId);
+      chatModel = await this.creditService.validateChatCredits(eggCtx, userId);
     } catch (err: unknown) {
       const error = err as Error & { code?: string; required?: number; current?: number; requiredTier?: string };
       if (error.code === 'CREDITS_INSUFFICIENT') {
@@ -120,15 +119,11 @@ export class ChatController {
     // Detect language of user message
     const language = detectLanguage(message);
 
-    // Build metadata
-    const metadata: Record<string, unknown> = {};
-    if (modelId) metadata.modelId = modelId;
-
     // Save user message
     await this.conversationService.saveMessage(
       eggCtx, conversationId, 'user', message,
       language !== 'unknown' ? language : undefined,
-      Object.keys(metadata).length > 0 ? metadata : undefined,
+      undefined,
     );
 
     // Load conversation history
