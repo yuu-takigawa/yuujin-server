@@ -13,6 +13,7 @@ export class EmailService {
       port: smtp.port,
       secure: smtp.secure,
       auth: smtp.auth,
+      authMethod: 'LOGIN',
     });
   }
 
