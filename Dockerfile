@@ -7,7 +7,7 @@ WORKDIR /app
 COPY yuujin-prompts/ ./yuujin-prompts/
 
 # Compile yuujin-prompts TS → JS (so production runtime can require it)
-RUN npx -y typescript tsc -p yuujin-prompts/tsconfig.json
+RUN npm install -g typescript && tsc -p yuujin-prompts/tsconfig.json
 
 # Install dependencies (rewrite local dep path for Docker context)
 COPY package.json ./
