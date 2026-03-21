@@ -133,6 +133,23 @@ export class ChatController {
       content: m.content as string,
     }));
 
+    // Detect news reference in the latest user message and inject full article
+    const newsRefMatch = message.match(/^📰\[([^\]]+)\]\s*.+$/);
+    if (newsRefMatch) {
+      const newsId = newsRefMatch[1];
+      try {
+        const news = await eggCtx.model.News.findOne({ id: newsId });
+        if (news) {
+          const nd = boneData(news as Record<string, unknown>);
+          const articleContent = (nd.content as string || '').slice(0, 1500);
+          messages.push({
+            role: 'user',
+            content: `[参考ニュース]\nタイトル: ${nd.title}\n内容: ${articleContent}\n\nこのニュースについて自然に会話してください。`,
+          });
+        }
+      } catch { /* ignore - just chat without article context */ }
+    }
+
     // Set SSE headers
     eggCtx.set('Content-Type', 'text/event-stream');
     eggCtx.set('Cache-Control', 'no-cache');
