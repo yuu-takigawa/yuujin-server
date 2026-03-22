@@ -15,9 +15,14 @@ import { ChatMessage } from '../ai/AIClient';
 import { buildSystemPrompt } from './lib/prompt-loader';
 import { detectLanguage } from './lib/language-detect';
 
-const ANNOTATE_PROMPTS: Record<string, (content: string) => string> = {
+const ANNOTATE_PROMPTS: Record<string, (content: string, jpLevel?: string) => string> = {
   translation: (content) => `将以下日语翻译成中文，只输出翻译结果：\n${content}`,
-  analysis: (content) => `以下の日本語の文法ポイントを3行以内で簡潔に解説してください。翻訳は不要です。\n${content}`,
+  analysis: (content, jpLevel) => {
+    const useChineseExplanation = !jpLevel || ['none', 'N5'].includes(jpLevel);
+    return useChineseExplanation
+      ? `用中文简洁解析以下日语的语法要点，3行以内，不要翻译原文：\n${content}`
+      : `以下の日本語の文法ポイントを3行以内で簡潔に解説してください。翻訳は不要です。\n${content}`;
+  },
   correction: (content) => `纠正以下日语中的语法错误，指出错误并给出正确写法：\n${content}`,
 };
 
@@ -329,6 +334,17 @@ export class ChatController {
       return;
     }
 
+    // Get user jpLevel for language-appropriate analysis
+    const userId = (eggCtx as Record<string, unknown>).userId as string;
+    let jpLevel: string | undefined;
+    try {
+      const user = await eggCtx.model.User.findOne({ id: userId });
+      if (user) {
+        const ud = boneData(user as Record<string, unknown>);
+        jpLevel = (ud.jpLevel as string) || undefined;
+      }
+    } catch { /* ignore */ }
+
     const aiConfig = eggCtx.app.config.bizConfig.ai;
 
     // Use a cheap model (qianwen flash)
@@ -354,7 +370,7 @@ export class ChatController {
       stream.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
-    const userPrompt = promptBuilder(content);
+    const userPrompt = promptBuilder(content, jpLevel);
     const messages: ChatMessage[] = [{ role: 'user', content: userPrompt }];
 
     writeSSE({ type: 'start' });
