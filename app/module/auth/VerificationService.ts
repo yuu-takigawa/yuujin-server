@@ -56,32 +56,44 @@ export class VerificationService {
 
   async verify(ctx: Context, email: string, code: string, type: 'register' | 'reset_password'): Promise<boolean> {
     const VC = this.db(ctx);
+    const inputCode = String(code).trim();
 
-    // Find latest unused, unexpired code
+    // Match code directly in SQL query to avoid ORM type mismatch
     const [record] = await VC.find({
       email,
+      code: inputCode,
       codeType: type,
       used: 0,
     }).where('expires_at >= ?', new Date()).order('id DESC').limit(1);
 
     if (!record) {
-      throw new Error('認証コードが無効または期限切れです');
-    }
+      // Check if there's an expired/used code to give better error message
+      const [anyRecord] = await VC.find({
+        email,
+        codeType: type,
+      }).order('id DESC').limit(1);
 
-    const id = record.id;
-    const attempts = (record.attempts || 0) + 1;
-    await VC.update({ id }, { attempts });
+      if (!anyRecord) {
+        throw new Error('認証コードが無効または期限切れです');
+      }
 
-    if (attempts > 5) {
-      await VC.update({ id }, { used: 1 });
-      throw new Error('試行回数が上限に達しました。新しいコードを取得してください');
-    }
+      const attempts = (anyRecord.attempts || 0) + 1;
+      await VC.update({ id: anyRecord.id }, { attempts });
 
-    if (String(record.code) !== String(code).trim()) {
+      if (attempts > 5) {
+        await VC.update({ id: anyRecord.id }, { used: 1 });
+        throw new Error('試行回数が上限に達しました。新しいコードを取得してください');
+      }
+
+      if (anyRecord.used) {
+        throw new Error('認証コードは既に使用されています');
+      }
+
       throw new Error('認証コードが正しくありません');
     }
 
-    await VC.update({ id }, { used: 1 });
+    // Mark as used
+    await VC.update({ id: record.id }, { used: 1 });
     return true;
   }
 }
