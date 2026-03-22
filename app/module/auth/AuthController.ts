@@ -20,11 +20,18 @@ export class AuthController {
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/register' })
   async register(
     @Context() ctx: EggContext,
-    @HTTPBody() body: { email: string; password: string; name: string; code: string },
+    @HTTPBody() body: { email: string; password: string; name: string; code: string; inviteCode?: string },
   ) {
     try {
+      // Invite code validation (beta period)
+      const eggCtx = ctx as unknown as EggCtx;
+      const requiredInviteCode = (eggCtx.app.config as any).bizConfig?.inviteCode;
+      if (requiredInviteCode && body.inviteCode !== requiredInviteCode) {
+        return { success: false, error: '招待コードが正しくありません' };
+      }
+
       const result = await this.authService.register(
-        ctx as unknown as EggCtx,
+        eggCtx,
         body.email,
         body.password,
         body.name,

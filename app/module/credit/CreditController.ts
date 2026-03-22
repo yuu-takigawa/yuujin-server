@@ -67,6 +67,13 @@ export class CreditController {
       return;
     }
 
+    // Beta: Max tier not available yet
+    if (body.tier === 'max') {
+      eggCtx.status = 400;
+      eggCtx.body = { success: false, error: 'このプランは近日公開予定です' };
+      return;
+    }
+
     try {
       const result = await this.creditService.upgradeMembership(eggCtx, userId, body.tier);
       eggCtx.body = { success: true, data: result };

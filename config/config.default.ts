@@ -32,6 +32,7 @@ export default () => {
 
   // Business config
   config.bizConfig = {
+    inviteCode: process.env.INVITE_CODE || '',
     jwt: {
       secret: process.env.JWT_SECRET || 'yuujin-jwt-secret-change-in-production',
       expiresIn: '7d',
