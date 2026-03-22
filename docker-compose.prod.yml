@@ -12,6 +12,7 @@ services:
       - EGG_SERVER_ENV=prod
       - EGG_KEYS=${EGG_KEYS}
       - INVITE_CODE=${INVITE_CODE}
+      - MAX_FREE_PRO=${MAX_FREE_PRO:-100}
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=${MYSQL_USER:-yuujin}

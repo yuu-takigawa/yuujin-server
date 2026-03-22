@@ -74,6 +74,17 @@ export class CreditController {
       return;
     }
 
+    // Beta: Free Pro quota limit
+    if (body.tier === 'pro') {
+      const maxFreePro = parseInt(process.env.MAX_FREE_PRO || '100', 10);
+      const proCount = await eggCtx.model.User.where({ membership: 'pro' }).count();
+      if (proCount >= maxFreePro) {
+        eggCtx.status = 400;
+        eggCtx.body = { success: false, error: '無料キャンペーンの定員に達しました' };
+        return;
+      }
+    }
+
     try {
       const result = await this.creditService.upgradeMembership(eggCtx, userId, body.tier);
       eggCtx.body = { success: true, data: result };
