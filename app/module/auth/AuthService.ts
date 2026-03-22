@@ -86,12 +86,18 @@ export class AuthService {
     // Verify code
     await this.verificationService.verify(ctx, email, code, 'reset_password');
 
-    // Update password
-    const passwordHash = await bcrypt.hash(newPassword, 10);
     const user = await ctx.model.User.findOne({ email });
     if (!user) {
-      throw new Error('ユーザーが見つかりません');
+      throw new Error('User not found');
     }
+
+    // Check new password is different from old
+    const isSame = await bcrypt.compare(newPassword, (user as any).passwordHash);
+    if (isSame) {
+      throw new Error('New password must be different from current password');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
     await ctx.model.User.update({ email }, { passwordHash });
   }
 
