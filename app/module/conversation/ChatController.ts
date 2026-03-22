@@ -227,6 +227,85 @@ export class ChatController {
 
   @HTTPMethod({
     method: HTTPMethodEnum.POST,
+    path: '/chat/suggest',
+  })
+  async suggest(@Context() ctx: EggContext) {
+    const eggCtx = ctx as unknown as EggCtx;
+    const userId = (eggCtx as Record<string, unknown>).userId as string;
+    const body = eggCtx.request.body as { conversationId?: string };
+    const { conversationId } = body;
+    const aiConfig = eggCtx.app.config.bizConfig.ai;
+
+    if (!conversationId) {
+      eggCtx.status = 400;
+      eggCtx.body = { error: 'conversationId is required' };
+      return;
+    }
+
+    // Verify conversation ownership
+    const conversation = await this.conversationService.getById(eggCtx, conversationId, userId);
+    if (!conversation) {
+      eggCtx.status = 404;
+      eggCtx.body = { error: 'Conversation not found' };
+      return;
+    }
+
+    // Load recent messages (last 5)
+    const history = await this.conversationService.getMessages(eggCtx, conversationId, 5);
+    const messages: ChatMessage[] = history.map((m: Record<string, unknown>) => ({
+      role: m.role as 'user' | 'assistant' | 'system',
+      content: m.content as string,
+    }));
+
+    if (messages.length === 0) {
+      eggCtx.status = 400;
+      eggCtx.body = { error: 'No messages in conversation' };
+      return;
+    }
+
+    // Set SSE headers
+    eggCtx.set('Content-Type', 'text/event-stream');
+    eggCtx.set('Cache-Control', 'no-cache');
+    eggCtx.set('Connection', 'keep-alive');
+    eggCtx.set('X-Accel-Buffering', 'no');
+
+    const stream = new PassThrough();
+    eggCtx.body = stream;
+
+    const writeSSE = (data: Record<string, unknown>) => {
+      stream.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // Use cheap model (qianwen turbo)
+    const provider = 'qianwen';
+    const overrideConfig = {
+      ...aiConfig,
+      [provider]: {
+        ...aiConfig[provider as keyof typeof aiConfig],
+        model: 'qwen-turbo-latest',
+      },
+    };
+
+    const suggestSystemPrompt = '以下の会話の続きとして、学習者が送りそうな自然な日本語の返事を1〜2文で提案してください。返事のみ出力し、説明は不要です。';
+
+    writeSSE({ type: 'start', conversationId });
+
+    try {
+      for await (const delta of this.aiService.streamChat(overrideConfig, messages, suggestSystemPrompt, provider)) {
+        writeSSE({ type: 'delta', content: delta });
+      }
+      // No credits deduction, no message saving
+      writeSSE({ type: 'done', conversationId });
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      writeSSE({ type: 'error', error: errorMessage });
+    } finally {
+      stream.end();
+    }
+  }
+
+  @HTTPMethod({
+    method: HTTPMethodEnum.POST,
     path: '/chat/annotate',
   })
   async annotate(@Context() ctx: EggContext) {
