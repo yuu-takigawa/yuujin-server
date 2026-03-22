@@ -153,7 +153,7 @@ export class ChatController {
           const articleContent = (nd.content as string || '').slice(0, 1500);
           messages.push({
             role: 'user',
-            content: `[参考ニュース]\nタイトル: ${nd.title}\n内容: ${articleContent}\n\nこのニュースについて自然に会話してください。`,
+            content: `[参考ニュース]\nタイトル: ${nd.title}\n内容: ${articleContent}\n\nこのニュースについて感想や意見を4文以内で短くコメントして。長文禁止、簡潔に。`,
           });
         }
       } catch { /* ignore - just chat without article context */ }
