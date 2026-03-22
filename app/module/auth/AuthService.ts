@@ -92,9 +92,12 @@ export class AuthService {
     }
 
     // Check new password is different from old
-    const isSame = await bcrypt.compare(newPassword, (user as any).passwordHash);
-    if (isSame) {
-      throw new Error('New password must be different from current password');
+    const oldHash = (user as any).passwordHash || (user as any).password_hash || user.attribute?.('passwordHash');
+    if (oldHash) {
+      const isSame = await bcrypt.compare(newPassword, oldHash);
+      if (isSame) {
+        throw new Error('New password must be different from current password');
+      }
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
