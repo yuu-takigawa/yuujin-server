@@ -77,7 +77,7 @@ export class VerificationService {
       throw new Error('試行回数が上限に達しました。新しいコードを取得してください');
     }
 
-    if (record.code !== code) {
+    if (String(record.code) !== String(code).trim()) {
       throw new Error('認証コードが正しくありません');
     }
 
