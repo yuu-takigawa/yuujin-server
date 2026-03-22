@@ -22,8 +22,8 @@ export class EmailService {
     const transporter = this.getTransporter(ctx);
 
     const subject = type === 'register'
-      ? '【Yuujin】验证码 / Verification Code'
-      : '【Yuujin】重置密码 / Reset Password';
+      ? `【Yuujin】${code} 是您的注册验证码`
+      : `【Yuujin】${code} 是您的密码重置验证码`;
 
     const actionZh = type === 'register' ? '注册账号' : '重置密码';
     const actionEn = type === 'register' ? 'Account Registration' : 'Password Reset';
@@ -49,8 +49,8 @@ export class EmailService {
         <p style="font-size:11px;color:#CCC;text-align:center;margin-top:24px;">
           © Yuujin — AI日语会话伙伴
         </p>
-        <!-- Apple one-time-code hint -->
-        <p style="font-size:0;color:transparent;max-height:0;overflow:hidden;">Your Yuujin verification code is ${code}</p>
+        <!-- iOS/Safari one-time-code auto-fill hint -->
+        <p style="font-size:0;line-height:0;max-height:0;overflow:hidden;mso-hide:all;">Your verification code is ${code}. @yuujin.cc #${code}</p>
       </div>
     `;
 
