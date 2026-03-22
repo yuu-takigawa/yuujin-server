@@ -15,6 +15,12 @@ import { ChatMessage } from '../ai/AIClient';
 import { buildSystemPrompt } from './lib/prompt-loader';
 import { detectLanguage } from './lib/language-detect';
 
+const ANNOTATE_PROMPTS: Record<string, (content: string) => string> = {
+  translation: (content) => `将以下日语翻译成中文，只输出翻译结果：\n${content}`,
+  analysis: (content) => `解析以下日语的语法结构，用简洁中文解释：\n${content}`,
+  correction: (content) => `纠正以下日语中的语法错误，指出错误并给出正确写法：\n${content}`,
+};
+
 function boneData(bone: Record<string, unknown>): Record<string, unknown> {
   if (typeof (bone as { getRaw?: Function }).getRaw === 'function') {
     return (bone as { getRaw: () => Record<string, unknown> }).getRaw();
@@ -211,6 +217,74 @@ export class ChatController {
       // Return updated credits in done event
       const creditsInfo = await this.creditService.getCredits(eggCtx, userId);
       writeSSE({ type: 'done', conversationId, credits: creditsInfo.credits });
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      writeSSE({ type: 'error', error: errorMessage });
+    } finally {
+      stream.end();
+    }
+  }
+
+  @HTTPMethod({
+    method: HTTPMethodEnum.POST,
+    path: '/chat/annotate',
+  })
+  async annotate(@Context() ctx: EggContext) {
+    const eggCtx = ctx as unknown as EggCtx;
+    const body = eggCtx.request.body as {
+      content?: string;
+      type?: string;
+    };
+    const { content, type } = body;
+
+    if (!content || !type) {
+      eggCtx.status = 400;
+      eggCtx.body = { error: 'content and type are required' };
+      return;
+    }
+
+    const promptBuilder = ANNOTATE_PROMPTS[type];
+    if (!promptBuilder) {
+      eggCtx.status = 400;
+      eggCtx.body = { error: 'type must be one of: translation, analysis, correction' };
+      return;
+    }
+
+    const aiConfig = eggCtx.app.config.bizConfig.ai;
+
+    // Use a cheap model (qianwen flash)
+    const provider = 'qianwen';
+    const overrideConfig = {
+      ...aiConfig,
+      [provider]: {
+        ...aiConfig[provider as keyof typeof aiConfig],
+        model: 'qwen-turbo-latest',
+      },
+    };
+
+    // Set SSE headers
+    eggCtx.set('Content-Type', 'text/event-stream');
+    eggCtx.set('Cache-Control', 'no-cache');
+    eggCtx.set('Connection', 'keep-alive');
+    eggCtx.set('X-Accel-Buffering', 'no');
+
+    const stream = new PassThrough();
+    eggCtx.body = stream;
+
+    const writeSSE = (data: Record<string, unknown>) => {
+      stream.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    const userPrompt = promptBuilder(content);
+    const messages: ChatMessage[] = [{ role: 'user', content: userPrompt }];
+
+    writeSSE({ type: 'start' });
+
+    try {
+      for await (const delta of this.aiService.streamChat(overrideConfig, messages, undefined, provider)) {
+        writeSSE({ type: 'delta', content: delta });
+      }
+      writeSSE({ type: 'done' });
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       writeSSE({ type: 'error', error: errorMessage });
