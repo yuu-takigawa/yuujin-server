@@ -49,6 +49,8 @@ export class EmailService {
         <p style="font-size:11px;color:#CCC;text-align:center;margin-top:24px;">
           © Yuujin — AI日语会话伙伴
         </p>
+        <!-- Apple one-time-code hint -->
+        <p style="font-size:0;color:transparent;max-height:0;overflow:hidden;">Your Yuujin verification code is ${code}</p>
       </div>
     `;
 
