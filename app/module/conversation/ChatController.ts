@@ -17,7 +17,7 @@ import { detectLanguage } from './lib/language-detect';
 
 const ANNOTATE_PROMPTS: Record<string, (content: string) => string> = {
   translation: (content) => `将以下日语翻译成中文，只输出翻译结果：\n${content}`,
-  analysis: (content) => `解析以下日语的语法结构，用简洁中文解释：\n${content}`,
+  analysis: (content) => `以下の日本語の文法ポイントを3行以内で簡潔に解説してください。翻訳は不要です。\n${content}`,
   correction: (content) => `纠正以下日语中的语法错误，指出错误并给出正确写法：\n${content}`,
 };
 
