@@ -11,6 +11,7 @@ services:
       - NODE_ENV=production
       - EGG_SERVER_ENV=prod
       - EGG_KEYS=${EGG_KEYS}
+      - INVITE_CODE=${INVITE_CODE}
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=${MYSQL_USER:-yuujin}
