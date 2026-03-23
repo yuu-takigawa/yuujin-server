@@ -37,6 +37,10 @@ export class CommentService {
       const ownCommentIds = new Set(
         comments.filter((c) => c.userId === userId).map((c) => c.id as string),
       );
+      // 收集用户回复过的一级评论 parentId（用户参与的对话线程）
+      const ownParentIds = new Set(
+        comments.filter((c) => c.userId === userId && c.parentId).map((c) => c.parentId as string),
+      );
       comments = comments.filter((c) => {
         // 用户自己的评论
         if (c.userId === userId) return true;
@@ -44,6 +48,8 @@ export class CommentService {
         if (c.isAi && !c.parentId) return true;
         // AI 对该用户评论的回复
         if (c.isAi && c.parentId && ownCommentIds.has(c.parentId as string)) return true;
+        // AI 回复在用户参与的同一对话线程中
+        if (c.isAi && c.parentId && ownParentIds.has(c.parentId as string)) return true;
         return false;
       });
     }

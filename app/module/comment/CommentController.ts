@@ -134,6 +134,7 @@ export class CommentController {
           id: character.id,
           name: character.name,
           avatarEmoji: character.avatarEmoji || character.avatar_emoji || '🤖',
+          avatarUrl: character.avatarUrl || character.avatar_url || '',
         },
       });
 
