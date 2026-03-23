@@ -72,4 +72,18 @@ export class AIService {
     const client = this.createClient(aiConfig, provider);
     yield* client.streamChat(messages, systemPrompt);
   }
+
+  /** Non-streaming chat: collects all stream deltas into a single string */
+  async chat(
+    aiConfig: AIConfig,
+    messages: ChatMessage[],
+    systemPrompt?: string,
+    provider?: string,
+  ): Promise<string> {
+    let result = '';
+    for await (const delta of this.streamChat(aiConfig, messages, systemPrompt, provider)) {
+      result += delta;
+    }
+    return result;
+  }
 }

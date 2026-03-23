@@ -281,6 +281,17 @@ export class ChatController {
       stream.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
+    // Check user jpLevel for translation hints
+    let jpLevel: string | undefined;
+    try {
+      const user = await eggCtx.model.User.findOne({ id: userId });
+      if (user) {
+        const ud = boneData(user as Record<string, unknown>);
+        jpLevel = (ud.jpLevel as string) || undefined;
+      }
+    } catch { /* ignore */ }
+    const needsTranslation = !jpLevel || ['none', 'N5'].includes(jpLevel);
+
     // Use cheap model (qianwen turbo)
     const provider = 'qianwen';
     const overrideConfig = {
@@ -291,7 +302,9 @@ export class ChatController {
       },
     };
 
-    const suggestSystemPrompt = '以下の会話の続きとして、学習者が送りそうな自然な日本語の返事を1〜2文で提案してください。返事のみ出力し、説明は不要です。';
+    const suggestSystemPrompt = needsTranslation
+      ? '以下の会話の続きとして、学習者が送りそうな自然な日本語の返事を1〜2文で提案してください。各文の後に括弧で短い中国語訳を添えてください。例: 今日はいい天気ですね！（今天天气真好！）返事のみ出力し、説明は不要です。'
+      : '以下の会話の続きとして、学習者が送りそうな自然な日本語の返事を1〜2文で提案してください。返事のみ出力し、説明は不要です。';
 
     writeSSE({ type: 'start', conversationId });
 

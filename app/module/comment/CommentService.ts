@@ -71,6 +71,7 @@ export class CommentService {
           ? {
             id: author.id,
             name: author.name,
+            avatarUrl: (author as Record<string, unknown>).avatarUrl || (author as Record<string, unknown>).avatar_url || '',
             avatarEmoji: (author as Record<string, unknown>).avatarEmoji || (author as Record<string, unknown>).avatar_emoji || '👤',
             isAi: Boolean(c.isAi),
           }

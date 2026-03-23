@@ -1,6 +1,7 @@
-import { ContextProto, AccessLevel } from '@eggjs/tegg';
+import { ContextProto, AccessLevel, Inject } from '@eggjs/tegg';
 import { Context } from 'egg';
 import { v4 as uuidv4 } from 'uuid';
+import { AIService } from '../ai/AIService';
 
 function boneData(bone: Record<string, unknown>): Record<string, unknown> {
   if (typeof (bone as { getRaw?: Function }).getRaw === 'function') {
@@ -13,6 +14,9 @@ function boneData(bone: Record<string, unknown>): Record<string, unknown> {
   accessLevel: AccessLevel.PUBLIC,
 })
 export class FriendService {
+  @Inject()
+  aiService!: AIService;
+
   async list(ctx: Context, userId: string) {
     const friendships = await ctx.model.Friendship.find({ userId }).order('is_pinned DESC, created_at ASC');
     const result: Record<string, unknown>[] = [];
@@ -49,6 +53,17 @@ export class FriendService {
 
     const charData = boneData(character as Record<string, unknown>);
 
+    // Check user jpLevel for translation
+    let userJpLevel = 'N4';
+    try {
+      const userRecord = await ctx.model.User.findOne({ id: userId });
+      if (userRecord) {
+        const userData = boneData(userRecord as Record<string, unknown>);
+        userJpLevel = (userData.jpLevel as string) || 'N4';
+      }
+    } catch { /* ignore */ }
+    const needsTranslation = !userJpLevel || ['none', 'N5'].includes(userJpLevel);
+
     // Create friendship，将角色的初始 SOUL 固化到 per-user 关系中
     const friendshipId = uuidv4();
     await ctx.model.Friendship.create({
@@ -62,7 +77,18 @@ export class FriendService {
 
     // Create conversation
     const conversationId = uuidv4();
-    const bio = (charData.bio as string) || `こんにちは！${charData.name}です。よろしくお願いします！`;
+    let bio = (charData.bio as string) || `こんにちは！${charData.name}です。よろしくお願いします！`;
+    // For none/N5 users, add Chinese translation in parentheses
+    if (needsTranslation && !bio.includes('（')) {
+      try {
+        const aiConfig = (ctx.app as any).config.bizConfig.ai;
+        const translatePrompt = '以下の日本語テキストを、各文の後ろに括弧で中国語訳を付けて返してください。例: こんにちは！（你好！）よろしくお願いします！（请多多关照！）\n元のテキストの改行や構造はそのまま維持してください。翻訳以外は何も出力しないでください。';
+        const translated = await this.aiService.chat(aiConfig, [{ role: 'user', content: bio }], translatePrompt, 'qianwen');
+        if (translated && translated.trim()) {
+          bio = translated.trim();
+        }
+      } catch { /* translation failed, use original bio */ }
+    }
     const now = new Date();
 
     await ctx.model.Conversation.create({

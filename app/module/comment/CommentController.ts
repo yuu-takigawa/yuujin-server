@@ -172,11 +172,14 @@ export class CommentController {
       }
 
       // 保存 AI 回复到 DB
+      // If the user's comment is itself a reply (has parentId), attach the AI reply
+      // to the same parent so it shows up in the 2-level comment structure
+      const targetParentId = (userComment.parentId as string) || body.commentId;
       await eggCtx.model.NewsComment.create({
         id: replyId,
         newsId: id,
         characterId: body.characterId,
-        parentId: body.commentId,
+        parentId: targetParentId,
         content: fullContent.trim().slice(0, 500),
         isAi: 1,
       });
