@@ -131,11 +131,11 @@ export class ChatController {
     // Detect language of user message
     const language = detectLanguage(message);
 
-    // Save user message
+    // Save user message (store imageUrl in metadata if present)
     await this.conversationService.saveMessage(
       eggCtx, conversationId, 'user', message,
       language !== 'unknown' ? language : undefined,
-      undefined,
+      imageUrl ? { imageUrl } : undefined,
     );
 
     // Load conversation history
