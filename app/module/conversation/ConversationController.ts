@@ -41,8 +41,11 @@ export class ConversationController {
       return { success: false, error: 'Conversation not found' };
     }
 
-    const messages = await this.conversationService.getMessages(eggCtx, id);
-    return { success: true, data: { conversation, messages } };
+    const query = (eggCtx.query || {}) as Record<string, string>;
+    const limit = query.limit ? parseInt(query.limit, 10) : 30;
+    const before = query.before || undefined;
+    const { messages, hasMore } = await this.conversationService.getMessages(eggCtx, id, limit, before);
+    return { success: true, data: { conversation, messages, hasMore } };
   }
 
   @HTTPMethod({

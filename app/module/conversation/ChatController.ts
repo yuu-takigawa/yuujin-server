@@ -139,7 +139,7 @@ export class ChatController {
     );
 
     // Load conversation history
-    const history = await this.conversationService.getMessages(eggCtx, conversationId);
+    const { messages: history } = await this.conversationService.getMessages(eggCtx, conversationId);
     const messages: ChatMessage[] = history.map((m: Record<string, unknown>) => ({
       role: m.role as 'user' | 'assistant' | 'system',
       content: m.content as string,
@@ -256,7 +256,7 @@ export class ChatController {
     }
 
     // Load recent messages (last 5)
-    const history = await this.conversationService.getMessages(eggCtx, conversationId, 5);
+    const { messages: history } = await this.conversationService.getMessages(eggCtx, conversationId, 5);
     const messages: ChatMessage[] = history.map((m: Record<string, unknown>) => ({
       role: m.role as 'user' | 'assistant' | 'system',
       content: m.content as string,

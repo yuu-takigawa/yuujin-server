@@ -13,11 +13,19 @@ function boneData(bone: Record<string, unknown>): Record<string, unknown> {
   accessLevel: AccessLevel.PUBLIC,
 })
 export class ConversationService {
-  async getMessages(ctx: Context, conversationId: string, limit = 50) {
-    const messages = await ctx.model.Message.find({
-      conversationId,
-    }).order('created_at ASC').limit(limit);
-    return messages.map((m: Record<string, unknown>) => boneData(m));
+  async getMessages(ctx: Context, conversationId: string, limit = 30, before?: string) {
+    const query: Record<string, unknown> = { conversationId };
+    if (before) {
+      query.createdAt = { $lt: before };
+    }
+    // Fetch limit+1 in DESC order to determine hasMore, then reverse to ASC
+    const rows = await ctx.model.Message.find(query)
+      .order('created_at DESC')
+      .limit(limit + 1);
+    const hasMore = rows.length > limit;
+    const sliced = hasMore ? rows.slice(0, limit) : rows;
+    sliced.reverse(); // back to chronological order
+    return { messages: sliced.map((m: Record<string, unknown>) => boneData(m)), hasMore };
   }
 
   async saveMessage(ctx: Context, conversationId: string, role: string, content: string, language?: string, metadata?: object) {
