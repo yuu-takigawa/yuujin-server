@@ -196,21 +196,20 @@ export class VoiceController {
       const ttsProvider = new TTSProvider(apiKey);
       const result = await ttsProvider.synthesize(text, voice, 'Japanese');
 
-      // 3. 下载音频并上传到 OSS
-      const audioRes = await fetch(result.audioUrl);
-      if (!audioRes.ok) {
-        throw new Error(`Failed to download TTS audio: ${audioRes.status}`);
-      }
-      const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-
-      const ossKey = `tts-cache/${cacheKey}.mp3`;
+      // 3. 先返回 DashScope 临时 URL（快速响应），后台异步上传到 OSS
       const oss = this.getOSSService(eggCtx);
-      const uploaded = await oss.upload(ossKey, audioBuffer, 'audio/mpeg');
+      const ossKeyVal = `tts-cache/${cacheKey}.mp3`;
+      // 后台上传：不阻塞响应
+      fetch(result.audioUrl)
+        .then(async (audioRes) => {
+          if (!audioRes.ok) return;
+          const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+          const uploaded = await oss.upload(ossKeyVal, audioBuffer, 'audio/mpeg');
+          setCache(cacheKey, uploaded.url);
+        })
+        .catch(() => { /* silent — 下次请求会重试 */ });
 
-      // 4. 写缓存
-      setCache(cacheKey, uploaded.url);
-
-      return { success: true, data: { url: uploaded.url, cached: false } };
+      return { success: true, data: { url: result.audioUrl, cached: false } };
     } catch (err) {
       eggCtx.status = 500;
       const message = err instanceof Error ? err.message : 'TTS failed';

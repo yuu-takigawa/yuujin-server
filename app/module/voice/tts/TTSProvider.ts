@@ -16,19 +16,12 @@ export class TTSProvider {
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string, model = 'qwen3-tts-instruct-flash') {
+  constructor(apiKey: string, model = 'qwen3-tts-flash') {
     this.apiKey = apiKey;
     this.model = model;
   }
 
-  async synthesize(text: string, voice = 'Cherry', language = 'Japanese', instructions?: string): Promise<TTSResult> {
-    const input: Record<string, unknown> = {
-      text,
-      voice,
-      language_type: language,
-      instructions: instructions || '自然な話し方で、落ち着いたペースで読んでください。',
-    };
-
+  async synthesize(text: string, voice = 'Cherry', language = 'Japanese'): Promise<TTSResult> {
     const response = await fetch(
       'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
       {
@@ -39,7 +32,11 @@ export class TTSProvider {
         },
         body: JSON.stringify({
           model: this.model,
-          input,
+          input: {
+            text,
+            voice,
+            language_type: language,
+          },
         }),
       },
     );
