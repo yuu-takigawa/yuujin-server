@@ -17,6 +17,7 @@ import {
 import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
 import * as crypto from 'crypto';
+import { PassThrough } from 'stream';
 import { DashScopeSTTProvider } from './stt/DashScopeSTTProvider';
 import { WhisperProvider } from './stt/WhisperProvider';
 import { STTProvider } from './stt/STTProvider';
@@ -215,5 +216,114 @@ export class VoiceController {
       const message = err instanceof Error ? err.message : 'TTS failed';
       return { success: false, error: message };
     }
+  }
+
+  /**
+   * POST /voice/tts-stream — 流式 TTS（SSE）
+   *
+   * Body: { text: string, voice?: string }
+   * Response: text/event-stream
+   *   data: {"audio":"<base64 PCM>"}    ← 每个音频分片
+   *   data: [DONE]                       ← 结束
+   *
+   * 调用 DashScope 时带 X-DashScope-SSE: enable，逐片转发。
+   */
+  @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/tts-stream' })
+  async ttsStream(@Context() ctx: EggContext) {
+    const eggCtx = ctx as unknown as EggCtx;
+
+    let body: { text?: string; voice?: string };
+    try {
+      body = eggCtx.request.body || {};
+    } catch {
+      eggCtx.status = 400;
+      return { success: false, error: 'Invalid request body' };
+    }
+
+    const text = body.text?.trim();
+    if (!text) {
+      eggCtx.status = 400;
+      return { success: false, error: 'text is required' };
+    }
+
+    if (text.length > 1500) {
+      eggCtx.status = 400;
+      return { success: false, error: 'text too long (max 1500 chars)' };
+    }
+
+    const voice = body.voice || 'Cherry';
+
+    // SSE headers
+    eggCtx.set('Content-Type', 'text/event-stream');
+    eggCtx.set('Cache-Control', 'no-cache');
+    eggCtx.set('Connection', 'keep-alive');
+    eggCtx.set('X-Accel-Buffering', 'no');
+
+    const stream = new PassThrough();
+    eggCtx.body = stream;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bizConfig = (eggCtx.app.config as any).bizConfig;
+    const apiKey = process.env.QIANWEN_API_KEY || bizConfig?.ai?.qianwen?.apiKey || '';
+
+    try {
+      const response = await fetch(
+        'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'X-DashScope-SSE': 'enable',
+          },
+          body: JSON.stringify({
+            model: 'qwen3-tts-flash',
+            input: { text, voice, language_type: 'Japanese' },
+          }),
+        },
+      );
+
+      if (!response.ok || !response.body) {
+        stream.write(`data: {"error":"DashScope error: ${response.status}"}\n\n`);
+        stream.write('data: [DONE]\n\n');
+        stream.end();
+        return;
+      }
+
+      // 逐行解析 DashScope SSE，提取 audio.data 转发给客户端
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buf += decoder.decode(value as Uint8Array, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const jsonStr = line.slice(5).trim();
+          if (!jsonStr) continue;
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const parsed = JSON.parse(jsonStr) as any;
+            const audioData = parsed?.output?.audio?.data;
+            if (audioData) {
+              stream.write(`data: ${JSON.stringify({ audio: audioData })}\n\n`);
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'TTS stream failed';
+      stream.write(`data: ${JSON.stringify({ error: message })}\n\n`);
+    }
+
+    stream.write('data: [DONE]\n\n');
+    stream.end();
   }
 }
