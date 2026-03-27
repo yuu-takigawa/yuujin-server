@@ -183,11 +183,22 @@ export class VoiceController {
     const voice = body.voice || 'Cherry';
     const cacheKey = getCacheKey(text, voice);
 
-    // 1. 查缓存
+    // 1. 查内存缓存
     const cachedUrl = getCached(cacheKey);
     if (cachedUrl) {
       return { success: true, data: { url: cachedUrl, cached: true } };
     }
+
+    // 1.5 查 OSS（内存缓存 miss 但 OSS 可能有，比如服务重启后）
+    try {
+      const oss = this.getOSSService(eggCtx);
+      const ossKey = `tts-cache/${cacheKey}.mp3`;
+      const ossUrl = await oss.exists(ossKey);
+      if (ossUrl) {
+        setCache(cacheKey, ossUrl);
+        return { success: true, data: { url: ossUrl, cached: true } };
+      }
+    } catch { /* OSS check failed, proceed to generate */ }
 
     try {
       // 2. 调 TTS API
@@ -252,6 +263,42 @@ export class VoiceController {
     }
 
     const voice = body.voice || 'Cherry';
+
+    // 先检查缓存 — 命中则返回 URL 事件，免走 DashScope
+    const cacheKeyStream = getCacheKey(text, voice);
+    const cachedStreamUrl = getCached(cacheKeyStream);
+    if (cachedStreamUrl) {
+      eggCtx.set('Content-Type', 'text/event-stream');
+      eggCtx.set('Cache-Control', 'no-cache');
+      eggCtx.set('Connection', 'keep-alive');
+      eggCtx.set('X-Accel-Buffering', 'no');
+      const s = new PassThrough();
+      eggCtx.body = s;
+      s.write(`data: ${JSON.stringify({ cachedUrl: cachedStreamUrl })}\n\n`);
+      s.write('data: [DONE]\n\n');
+      s.end();
+      return;
+    }
+
+    // 也查一下 OSS
+    try {
+      const ossCheck = this.getOSSService(eggCtx);
+      const ossKeyCheck = `tts-cache/${cacheKeyStream}.mp3`;
+      const ossUrlCheck = await ossCheck.exists(ossKeyCheck);
+      if (ossUrlCheck) {
+        setCache(cacheKeyStream, ossUrlCheck);
+        eggCtx.set('Content-Type', 'text/event-stream');
+        eggCtx.set('Cache-Control', 'no-cache');
+        eggCtx.set('Connection', 'keep-alive');
+        eggCtx.set('X-Accel-Buffering', 'no');
+        const s = new PassThrough();
+        eggCtx.body = s;
+        s.write(`data: ${JSON.stringify({ cachedUrl: ossUrlCheck })}\n\n`);
+        s.write('data: [DONE]\n\n');
+        s.end();
+        return;
+      }
+    } catch { /* proceed to DashScope */ }
 
     // SSE headers
     eggCtx.set('Content-Type', 'text/event-stream');
@@ -325,5 +372,21 @@ export class VoiceController {
 
     stream.write('data: [DONE]\n\n');
     stream.end();
+
+    // 后台异步：调非流式 TTS 生成 + 上传 OSS + 写缓存，下次直接命中
+    if (!getCached(cacheKeyStream)) {
+      const ttsProvider = new TTSProvider(apiKey);
+      ttsProvider.synthesize(text, voice, 'Japanese')
+        .then(async (result) => {
+          const oss = this.getOSSService(eggCtx);
+          const ossKeyVal = `tts-cache/${cacheKeyStream}.mp3`;
+          const audioRes = await fetch(result.audioUrl);
+          if (!audioRes.ok) return;
+          const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+          const uploaded = await oss.upload(ossKeyVal, audioBuffer, 'audio/mpeg');
+          setCache(cacheKeyStream, uploaded.url);
+        })
+        .catch(() => { /* silent — next request will retry */ });
+    }
   }
 }

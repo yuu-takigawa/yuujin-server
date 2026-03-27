@@ -77,4 +77,44 @@ export class OSSService {
 
     return { key, url: publicUrl };
   }
+
+  /** HEAD 检查对象是否存在，存在则返回公开 URL，不存在返回 null */
+  async exists(key: string): Promise<string | null> {
+    const { region, bucket, accessKeyId, accessKeySecret, cdnDomain } = this.config;
+    const endpoint = `${bucket}.${region}.aliyuncs.com`;
+    const url = `https://${endpoint}/${key}`;
+
+    const date = new Date().toUTCString();
+    const stringToSign = [
+      'HEAD',
+      '',
+      '',
+      date,
+      `/${bucket}/${key}`,
+    ].join('\n');
+
+    const signature = crypto
+      .createHmac('sha1', accessKeySecret)
+      .update(stringToSign)
+      .digest('base64');
+
+    try {
+      const response = await fetch(url, {
+        method: 'HEAD',
+        headers: {
+          Authorization: `OSS ${accessKeyId}:${signature}`,
+          Date: date,
+        },
+      });
+
+      if (response.ok) {
+        return cdnDomain
+          ? `https://${cdnDomain}/${key}`
+          : `https://${endpoint}/${key}`;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
 }
