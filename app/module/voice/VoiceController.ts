@@ -21,7 +21,7 @@ import { DashScopeSTTProvider } from './stt/DashScopeSTTProvider';
 import { WhisperProvider } from './stt/WhisperProvider';
 import { STTProvider } from './stt/STTProvider';
 import { TTSProvider } from './tts/TTSProvider';
-import { OSSService } from '../avatar/OSSService';
+import { OSSService } from '../../common/OSSService';
 
 // ─── TTS 缓存（24h TTL）───
 interface CacheEntry {

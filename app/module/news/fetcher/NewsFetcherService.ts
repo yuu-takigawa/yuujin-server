@@ -13,7 +13,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { OSSService, OSSConfig } from '../../avatar/OSSService';
+import { OSSService, OSSConfig } from '../../../common/OSSService';
 
 export interface RawArticle {
   title: string;

@@ -16,7 +16,7 @@ import {
 import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
 import { v4 as uuidv4 } from 'uuid';
-import { OSSService } from './OSSService';
+import { OSSService } from '../../common/OSSService';
 import { ContentModerationService } from './ContentModerationService';
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
