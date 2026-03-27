@@ -21,7 +21,14 @@ export class TTSProvider {
     this.model = model;
   }
 
-  async synthesize(text: string, voice = 'Cherry', language = 'Japanese'): Promise<TTSResult> {
+  async synthesize(text: string, voice = 'Cherry', language = 'Japanese', instructions?: string): Promise<TTSResult> {
+    const input: Record<string, unknown> = {
+      text,
+      voice,
+      language_type: language,
+      instructions: instructions || '自然な話し方で、落ち着いたペースで読んでください。',
+    };
+
     const response = await fetch(
       'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
       {
@@ -32,11 +39,7 @@ export class TTSProvider {
         },
         body: JSON.stringify({
           model: this.model,
-          input: {
-            text,
-            voice,
-            language_type: language,
-          },
+          input,
         }),
       },
     );
