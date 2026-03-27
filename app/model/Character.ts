@@ -36,6 +36,10 @@ export default class Character extends Bone {
   @Column()
   bio!: string;
 
+  /** TTS 音色 ID，如 Cherry / Ethan / Mochi 等 */
+  @Column()
+  voice!: string;
+
   /** 角色初始灵魂：加好友时写入 friendship.soul 的起始值 */
   @Column({ name: 'initial_soul' })
   initialSoul!: string;

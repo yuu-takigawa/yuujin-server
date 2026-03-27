@@ -20,6 +20,7 @@ export interface CreateCharacterInput {
   hobbies?: string[];
   location?: string;
   bio?: string;
+  voice?: string;
 }
 
 const PRESET_CHARACTERS = [
@@ -34,6 +35,7 @@ const PRESET_CHARACTERS = [
     hobbies: ['カフェ巡り', '写真撮影', 'スイーツ作り'],
     location: '東京・下北沢',
     bio: 'はじめまして！佐藤ゆきです。下北沢のカフェで働いています。おしゃべりが大好きで、いろんな話をするのが楽しみです。日本語の練習、一緒に頑張りましょう！気軽に話しかけてくださいね。',
+    voice: 'Chelsie',
     initialSoul: yukiSoul,
   },
   {
@@ -47,6 +49,7 @@ const PRESET_CHARACTERS = [
     hobbies: ['プログラミング', 'アニメ', 'ゲーム'],
     location: '東京・秋葉原',
     bio: 'やあ！田中健太です。IT企業でエンジニアをしています。アニメやゲームが好きで、秋葉原によく行きます。技術の話からサブカルの話まで、何でも話しましょう！日本語、一緒に楽しく学びましょう。',
+    voice: 'Ethan',
     initialSoul: kentaSoul,
   },
   {
@@ -60,6 +63,7 @@ const PRESET_CHARACTERS = [
     hobbies: ['読書', '茶道', '旅行'],
     location: '京都',
     bio: 'こんにちは、山本さくらと申します。京都で日本語を教えています。日本の文化や歴史が大好きです。茶道も少し嗜んでいます。ゆっくり丁寧にお話ししますので、安心してくださいね。一緒に日本語を楽しみましょう。',
+    voice: 'Maia',
     initialSoul: sakuraSoul,
   },
   {
@@ -73,6 +77,7 @@ const PRESET_CHARACTERS = [
     hobbies: ['ウイスキー', '音楽', 'バイク', '映画'],
     location: '東京・中目黒',
     bio: '中目黒の路地裏で小さなバーをやってる。看板なし、カウンター8席。元バンドマン。ラフロイグとChet Bakerがあればだいたい機嫌がいい。話、聞くよ。',
+    voice: 'Moon',
     initialSoul: renSoul,
   },
   {
@@ -86,6 +91,7 @@ const PRESET_CHARACTERS = [
     hobbies: ['中国ドラマ', '食べ歩き', 'カラオケ', '中国語学習'],
     location: '大阪',
     bio: '大阪の大学で中国語勉強してる！去年上海に留学してから完全にハマった。声調むずすぎるけど頑張ってる。麻辣香鍋と周杰倫の「晴天」が最近のブーム。お互い言葉教え合おうや！',
+    voice: 'Momo',
     initialSoul: mioSoul,
   },
 ];
@@ -117,6 +123,7 @@ export class CharacterService {
       hobbies: input.hobbies || [],
       location: input.location || '',
       bio: input.bio || '',
+      voice: input.voice || (input.gender === 'male' || input.gender === '男性' ? 'Ethan' : 'Cherry'),
       initialSoul,
       isPreset: 0,
     });
@@ -143,6 +150,7 @@ export class CharacterService {
     if (input.hobbies !== undefined) updates.hobbies = input.hobbies;
     if (input.location !== undefined) updates.location = input.location;
     if (input.bio !== undefined) updates.bio = input.bio;
+    if (input.voice !== undefined) updates.voice = input.voice;
 
     await ctx.model.Character.update({ id }, updates);
     const updated = await ctx.model.Character.findOne({ id });
@@ -172,6 +180,7 @@ export class CharacterService {
         hobbies: preset.hobbies || [],
         location: preset.location || '',
         bio: preset.bio || '',
+        voice: preset.voice || '',
         initialSoul: preset.initialSoul,
         isPreset: 1,
       });

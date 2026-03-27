@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS characters (
   hobbies JSON,
   location VARCHAR(100) DEFAULT '',
   bio TEXT,
+  voice VARCHAR(50) DEFAULT '',
   prompt_key VARCHAR(100) DEFAULT '',
   is_preset TINYINT(1) DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
