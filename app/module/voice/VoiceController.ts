@@ -265,6 +265,42 @@ export class VoiceController {
     const voice = body.voice || 'Cherry';
     const cacheKeyStream = getCacheKey(text, voice);
 
+    // 缓存检查：命中则返回 cachedUrl（前端用 new Audio() 播放）
+    // iOS Safari PWA 下 Web Audio API 不出声，只有 new Audio() 能出声
+    const cachedStreamUrl = getCached(cacheKeyStream);
+    if (cachedStreamUrl) {
+      eggCtx.set('Content-Type', 'text/event-stream');
+      eggCtx.set('Cache-Control', 'no-cache');
+      eggCtx.set('Connection', 'keep-alive');
+      eggCtx.set('X-Accel-Buffering', 'no');
+      const s = new PassThrough();
+      eggCtx.body = s;
+      s.write(`data: ${JSON.stringify({ cachedUrl: cachedStreamUrl })}\n\n`);
+      s.write('data: [DONE]\n\n');
+      s.end();
+      return;
+    }
+
+    // 查 OSS
+    try {
+      const ossCheck = this.getOSSService(eggCtx);
+      const ossUrlCheck = await ossCheck.exists(`tts-cache/${cacheKeyStream}.mp3`);
+      if (ossUrlCheck) {
+        setCache(cacheKeyStream, ossUrlCheck);
+        eggCtx.set('Content-Type', 'text/event-stream');
+        eggCtx.set('Cache-Control', 'no-cache');
+        eggCtx.set('Connection', 'keep-alive');
+        eggCtx.set('X-Accel-Buffering', 'no');
+        const s = new PassThrough();
+        eggCtx.body = s;
+        s.write(`data: ${JSON.stringify({ cachedUrl: ossUrlCheck })}\n\n`);
+        s.write('data: [DONE]\n\n');
+        s.end();
+        return;
+      }
+    } catch { /* proceed to DashScope */ }
+
+    // 未缓存：走 DashScope 流式
     // SSE headers
     eggCtx.set('Content-Type', 'text/event-stream');
     eggCtx.set('Cache-Control', 'no-cache');
@@ -274,9 +310,6 @@ export class VoiceController {
     const stream = new PassThrough();
     eggCtx.body = stream;
 
-    // tts-stream 始终走 DashScope 流式 API（不做二次缓存）
-    // 原因：DashScope 返回 WAV/PCM chunk，OSS 缓存的是 mp3，格式不兼容
-    // 且前端 Web Audio API 需要 PCM 数据，new Audio(mp3Url) 在 iOS Safari 异步回调中被拒
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const bizConfig = (eggCtx.app.config as any).bizConfig;
     const apiKey = process.env.QIANWEN_API_KEY || bizConfig?.ai?.qianwen?.apiKey || '';
