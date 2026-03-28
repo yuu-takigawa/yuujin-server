@@ -400,4 +400,111 @@ export class ChatController {
       stream.end();
     }
   }
+
+  /**
+   * POST /chat/greet — 新好友第一条消息（SSE 流式）
+   *
+   * 前端 loadConversation 检测 0 消息后调用。
+   * 服务端：取角色 bio → N5 用户翻译 → SSE 逐字流式返回 → 持久化 Message。
+   */
+  @HTTPMethod({
+    method: HTTPMethodEnum.POST,
+    path: '/chat/greet',
+  })
+  async greet(@Context() ctx: EggContext) {
+    const eggCtx = ctx as unknown as EggCtx;
+    const userId = (eggCtx as Record<string, unknown>).userId as string;
+    const body = eggCtx.request.body as { conversationId?: string };
+
+    if (!body.conversationId) {
+      eggCtx.status = 400;
+      return { success: false, error: 'conversationId required' };
+    }
+
+    const conv = await eggCtx.model.Conversation.findOne({ id: body.conversationId, userId });
+    if (!conv) {
+      eggCtx.status = 404;
+      return { success: false, error: 'Conversation not found' };
+    }
+    const convData = conv.getRaw ? conv.getRaw() : conv;
+    const characterId = convData.characterId as string;
+
+    // 检查是否已有消息（防重复调用）
+    const existingMsgs = await eggCtx.model.Message.find({ conversationId: body.conversationId }).limit(1);
+    if ((existingMsgs as unknown[]).length > 0) {
+      eggCtx.status = 200;
+      return { success: true, data: { skipped: true } };
+    }
+
+    const character = await eggCtx.model.Character.findOne({ id: characterId });
+    if (!character) {
+      eggCtx.status = 404;
+      return { success: false, error: 'Character not found' };
+    }
+    const charData = character.getRaw ? character.getRaw() : character;
+    let bio = (charData.bio as string) || `こんにちは！${charData.name}です。よろしくお願いします！`;
+
+    // 检查用户 jpLevel
+    let userJpLevel = 'N4';
+    try {
+      const userRecord = await eggCtx.model.User.findOne({ id: userId });
+      if (userRecord) {
+        const ud = userRecord.getRaw ? userRecord.getRaw() : userRecord;
+        userJpLevel = (ud.jpLevel as string) || 'N4';
+      }
+    } catch { /* ignore */ }
+
+    // N5/none 用户：翻译 bio
+    const needsTranslation = !userJpLevel || ['none', 'N5'].includes(userJpLevel);
+    if (needsTranslation && !bio.includes('（')) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const aiConfig = (eggCtx.app as any).config?.bizConfig?.ai;
+        if (aiConfig) {
+          const translated = await this.aiService.chat(aiConfig, [{ role: 'user', content: bio }],
+            '以下の日本語テキストを、各文の後ろに括弧で中国語訳を付けて返してください。例: こんにちは！（你好！）よろしくお願いします！（请多多关照！）\n元のテキストの改行や構造はそのまま維持してください。翻訳以外は何も出力しないでください。',
+            'qianwen',
+          );
+          if (translated?.trim()) bio = translated.trim();
+        }
+      } catch { /* 翻译失败用原始 bio */ }
+    }
+
+    // SSE headers
+    eggCtx.set('Content-Type', 'text/event-stream');
+    eggCtx.set('Cache-Control', 'no-cache');
+    eggCtx.set('Connection', 'keep-alive');
+    eggCtx.set('X-Accel-Buffering', 'no');
+
+    const stream = new PassThrough();
+    eggCtx.body = stream;
+
+    // 逐字流式返回
+    const writeSSE = (data: Record<string, unknown>) => {
+      stream.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    writeSSE({ type: 'start', conversationId: body.conversationId });
+
+    for (let i = 0; i < bio.length; i++) {
+      writeSSE({ type: 'delta', content: bio[i] });
+    }
+
+    // 持久化到 DB
+    const { v4: uuidv4 } = await import('uuid');
+    const messageId = uuidv4();
+    try {
+      await eggCtx.model.Message.create({
+        id: messageId,
+        conversationId: body.conversationId,
+        role: 'assistant',
+        content: bio,
+        language: 'ja',
+      });
+      await eggCtx.model.Conversation.update({ id: body.conversationId }, { lastMessage: bio });
+    } catch { /* silent */ }
+
+    writeSSE({ type: 'done', conversationId: body.conversationId });
+    stream.end();
+  }
 }

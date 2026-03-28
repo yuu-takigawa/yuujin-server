@@ -89,35 +89,8 @@ export class FriendService {
       hasUnread: 1,
     });
 
-    // N5/初心者：翻译 bio（同步等待，按钮有 loading 反馈）
-    let finalBio = bio;
-    if (needsTranslation && !bio.includes('（')) {
-      try {
-        const aiConfig = (ctx.app as any).config?.bizConfig?.ai;
-        if (aiConfig) {
-          const translated = await this.aiService.chat(aiConfig, [{ role: 'user', content: bio }],
-            '以下の日本語テキストを、各文の後ろに括弧で中国語訳を付けて返してください。例: こんにちは！（你好！）よろしくお願いします！（请多多关照！）\n元のテキストの改行や構造はそのまま維持してください。翻訳以外は何も出力しないでください。',
-            'qianwen',
-          );
-          if (translated?.trim()) finalBio = translated.trim();
-        }
-      } catch { /* 翻译失败用原始 bio */ }
-    }
-
-    // 插入第一条消息（角色自我介绍，N5 用户带翻译）
-    const messageId = uuidv4();
-    await ctx.model.Message.create({
-      id: messageId,
-      conversationId,
-      role: 'assistant',
-      content: finalBio,
-      language: 'ja',
-    });
-
-    // 更新 lastMessage 为翻译后版本
-    if (finalBio !== bio) {
-      await ctx.model.Conversation.update({ id: conversationId }, { lastMessage: finalBio });
-    }
+    // 不插入 Message — 前端 loadConversation 检测 0 消息后
+    // 调 POST /chat/greet 生成翻译后的 bio，SSE 流式返回并持久化
 
     return {
       friendship: { id: friendshipId, userId, characterId, isPinned: 0, isMuted: 0 },
