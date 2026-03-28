@@ -84,14 +84,39 @@ export class FriendService {
       id: conversationId,
       userId,
       characterId,
-      lastMessage: bio,  // bio 存在 lastMessage，前端 streamText 流式显示
+      lastMessage: bio,
       lastMessageAt: now,
       hasUnread: 1,
     });
 
-    // 不插入 Message — 前端 loadConversation 发现 0 条消息时
-    // 会通过 streamText 流式显示 lastMessage（有 typing 动画）
-    // streamText 服务端会对 none/N5 用户自动添加中文翻译
+    // 插入第一条消息（角色自我介绍）
+    const messageId = uuidv4();
+    await ctx.model.Message.create({
+      id: messageId,
+      conversationId,
+      role: 'assistant',
+      content: bio,
+      language: 'ja',
+    });
+
+    // N5/初心者：后台异步翻译 bio（不阻塞响应）
+    if (needsTranslation && !bio.includes('（')) {
+      const aiConfig = (ctx.app as any).config?.bizConfig?.ai;
+      if (aiConfig) {
+        this.aiService.chat(aiConfig, [{ role: 'user', content: bio }],
+          '以下の日本語テキストを、各文の後ろに括弧で中国語訳を付けて返してください。例: こんにちは！（你好！）よろしくお願いします！（请多多关照！）\n元のテキストの改行や構造はそのまま維持してください。翻訳以外は何も出力しないでください。',
+          'qianwen',
+        ).then(async (translated) => {
+          if (translated?.trim()) {
+            const t = translated.trim();
+            try {
+              await ctx.model.Message.update({ id: messageId }, { content: t });
+              await ctx.model.Conversation.update({ id: conversationId }, { lastMessage: t });
+            } catch { /* silent */ }
+          }
+        }).catch(() => {});
+      }
+    }
 
     return {
       friendship: { id: friendshipId, userId, characterId, isPinned: 0, isMuted: 0 },
