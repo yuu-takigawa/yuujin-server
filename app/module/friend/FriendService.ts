@@ -77,18 +77,7 @@ export class FriendService {
 
     // Create conversation
     const conversationId = uuidv4();
-    let bio = (charData.bio as string) || `こんにちは！${charData.name}です。よろしくお願いします！`;
-    // For none/N5 users, add Chinese translation in parentheses
-    if (needsTranslation && !bio.includes('（')) {
-      try {
-        const aiConfig = (ctx.app as any).config.bizConfig.ai;
-        const translatePrompt = '以下の日本語テキストを、各文の後ろに括弧で中国語訳を付けて返してください。例: こんにちは！（你好！）よろしくお願いします！（请多多关照！）\n元のテキストの改行や構造はそのまま維持してください。翻訳以外は何も出力しないでください。';
-        const translated = await this.aiService.chat(aiConfig, [{ role: 'user', content: bio }], translatePrompt, 'qianwen');
-        if (translated && translated.trim()) {
-          bio = translated.trim();
-        }
-      } catch { /* translation failed, use original bio */ }
-    }
+    const bio = (charData.bio as string) || `こんにちは！${charData.name}です。よろしくお願いします！`;
     const now = new Date();
 
     await ctx.model.Conversation.create({
@@ -109,6 +98,25 @@ export class FriendService {
       content: bio,
       language: 'ja',
     });
+
+    // For none/N5 users, translate bio in background (don't block response)
+    if (needsTranslation && !bio.includes('（')) {
+      const aiConfig = (ctx.app as any).config?.bizConfig?.ai;
+      if (aiConfig) {
+        this.aiService.chat(aiConfig, [{ role: 'user', content: bio }],
+          '以下の日本語テキストを、各文の後ろに括弧で中国語訳を付けて返してください。例: こんにちは！（你好！）よろしくお願いします！（请多多关照！）\n元のテキストの改行や構造はそのまま維持してください。翻訳以外は何も出力しないでください。',
+          'qianwen',
+        ).then(async (translated) => {
+          if (translated && translated.trim()) {
+            const t = translated.trim();
+            try {
+              await ctx.model.Message.update({ id: messageId }, { content: t });
+              await ctx.model.Conversation.update({ id: conversationId }, { lastMessage: t });
+            } catch { /* silent */ }
+          }
+        }).catch(() => { /* translation failed, keep original */ });
+      }
+    }
 
     return {
       friendship: { id: friendshipId, userId, characterId, isPinned: 0, isMuted: 0 },
