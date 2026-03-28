@@ -263,11 +263,6 @@ export class VoiceController {
     }
 
     const voice = body.voice || 'Cherry';
-
-    // tts-stream 始终走 DashScope 流式（不返回 cachedUrl）
-    // 因为 iOS Safari 在非用户手势上下文中拒绝 new Audio().play()，
-    // 而 Web Audio API（流式 chunk 路径）通过 ensureAudioContextResumed 已解锁。
-    // 缓存仅用于非流式 /voice/tts 路由。
     const cacheKeyStream = getCacheKey(text, voice);
 
     // SSE headers
@@ -279,6 +274,9 @@ export class VoiceController {
     const stream = new PassThrough();
     eggCtx.body = stream;
 
+    // tts-stream 始终走 DashScope 流式 API（不做二次缓存）
+    // 原因：DashScope 返回 WAV/PCM chunk，OSS 缓存的是 mp3，格式不兼容
+    // 且前端 Web Audio API 需要 PCM 数据，new Audio(mp3Url) 在 iOS Safari 异步回调中被拒
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const bizConfig = (eggCtx.app.config as any).bizConfig;
     const apiKey = process.env.QIANWEN_API_KEY || bizConfig?.ai?.qianwen?.apiKey || '';
