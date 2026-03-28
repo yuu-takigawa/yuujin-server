@@ -84,39 +84,14 @@ export class FriendService {
       id: conversationId,
       userId,
       characterId,
-      lastMessage: bio,
+      lastMessage: bio,  // bio 存在 lastMessage，前端 streamText 流式显示
       lastMessageAt: now,
       hasUnread: 1,
     });
 
-    // Insert first message (character introduces themselves)
-    const messageId = uuidv4();
-    await ctx.model.Message.create({
-      id: messageId,
-      conversationId,
-      role: 'assistant',
-      content: bio,
-      language: 'ja',
-    });
-
-    // For none/N5 users, translate bio in background (don't block response)
-    if (needsTranslation && !bio.includes('（')) {
-      const aiConfig = (ctx.app as any).config?.bizConfig?.ai;
-      if (aiConfig) {
-        this.aiService.chat(aiConfig, [{ role: 'user', content: bio }],
-          '以下の日本語テキストを、各文の後ろに括弧で中国語訳を付けて返してください。例: こんにちは！（你好！）よろしくお願いします！（请多多关照！）\n元のテキストの改行や構造はそのまま維持してください。翻訳以外は何も出力しないでください。',
-          'qianwen',
-        ).then(async (translated) => {
-          if (translated && translated.trim()) {
-            const t = translated.trim();
-            try {
-              await ctx.model.Message.update({ id: messageId }, { content: t });
-              await ctx.model.Conversation.update({ id: conversationId }, { lastMessage: t });
-            } catch { /* silent */ }
-          }
-        }).catch(() => { /* translation failed, keep original */ });
-      }
-    }
+    // 不插入 Message — 前端 loadConversation 发现 0 条消息时
+    // 会通过 streamText 流式显示 lastMessage（有 typing 动画）
+    // streamText 服务端会对 none/N5 用户自动添加中文翻译
 
     return {
       friendship: { id: friendshipId, userId, characterId, isPinned: 0, isMuted: 0 },
