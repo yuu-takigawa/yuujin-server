@@ -272,26 +272,7 @@ export class VoiceController {
       return;
     }
 
-    // 查 OSS
-    try {
-      const ossCheck = this.getOSSService(eggCtx);
-      const ossUrlCheck = await ossCheck.exists(`tts-cache/${cacheKeyStream}.mp3`);
-      if (ossUrlCheck) {
-        setCache(cacheKeyStream, ossUrlCheck);
-        eggCtx.set('Content-Type', 'text/event-stream');
-        eggCtx.set('Cache-Control', 'no-cache');
-        eggCtx.set('Connection', 'keep-alive');
-        eggCtx.set('X-Accel-Buffering', 'no');
-        const s = new PassThrough();
-        eggCtx.body = s;
-        s.write(`data: ${JSON.stringify({ cachedUrl: ossUrlCheck })}\n\n`);
-        s.write('data: [DONE]\n\n');
-        s.end();
-        return;
-      }
-    } catch { /* proceed to DashScope */ }
-
-    // 未缓存：走 DashScope 流式
+    // 未缓存：走 DashScope 流式（不查 OSS，避免 HEAD 延迟 1-2s）
     // SSE headers
     eggCtx.set('Content-Type', 'text/event-stream');
     eggCtx.set('Cache-Control', 'no-cache');
