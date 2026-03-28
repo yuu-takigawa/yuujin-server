@@ -264,41 +264,11 @@ export class VoiceController {
 
     const voice = body.voice || 'Cherry';
 
-    // 先检查缓存 — 命中则返回 URL 事件，免走 DashScope
+    // tts-stream 始终走 DashScope 流式（不返回 cachedUrl）
+    // 因为 iOS Safari 在非用户手势上下文中拒绝 new Audio().play()，
+    // 而 Web Audio API（流式 chunk 路径）通过 ensureAudioContextResumed 已解锁。
+    // 缓存仅用于非流式 /voice/tts 路由。
     const cacheKeyStream = getCacheKey(text, voice);
-    const cachedStreamUrl = getCached(cacheKeyStream);
-    if (cachedStreamUrl) {
-      eggCtx.set('Content-Type', 'text/event-stream');
-      eggCtx.set('Cache-Control', 'no-cache');
-      eggCtx.set('Connection', 'keep-alive');
-      eggCtx.set('X-Accel-Buffering', 'no');
-      const s = new PassThrough();
-      eggCtx.body = s;
-      s.write(`data: ${JSON.stringify({ cachedUrl: cachedStreamUrl })}\n\n`);
-      s.write('data: [DONE]\n\n');
-      s.end();
-      return;
-    }
-
-    // 也查一下 OSS
-    try {
-      const ossCheck = this.getOSSService(eggCtx);
-      const ossKeyCheck = `tts-cache/${cacheKeyStream}.mp3`;
-      const ossUrlCheck = await ossCheck.exists(ossKeyCheck);
-      if (ossUrlCheck) {
-        setCache(cacheKeyStream, ossUrlCheck);
-        eggCtx.set('Content-Type', 'text/event-stream');
-        eggCtx.set('Cache-Control', 'no-cache');
-        eggCtx.set('Connection', 'keep-alive');
-        eggCtx.set('X-Accel-Buffering', 'no');
-        const s = new PassThrough();
-        eggCtx.body = s;
-        s.write(`data: ${JSON.stringify({ cachedUrl: ossUrlCheck })}\n\n`);
-        s.write('data: [DONE]\n\n');
-        s.end();
-        return;
-      }
-    } catch { /* proceed to DashScope */ }
 
     // SSE headers
     eggCtx.set('Content-Type', 'text/event-stream');
