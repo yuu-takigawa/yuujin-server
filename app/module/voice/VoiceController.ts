@@ -183,32 +183,36 @@ export class VoiceController {
     const voice = body.voice || 'Cherry';
     const cacheKey = getCacheKey(text, voice);
 
-    // 1. 查内存缓存
+    // 1. 查内存缓存（O(1)，无网络）
     const cachedUrl = getCached(cacheKey);
     if (cachedUrl) {
       return { success: true, data: { url: cachedUrl, cached: true } };
     }
 
-    // 1.5 查 OSS（内存缓存 miss 但 OSS 可能有，比如服务重启后）
-    try {
-      const oss = this.getOSSService(eggCtx);
-      const ossKey = `tts-cache/${cacheKey}.mp3`;
-      const ossUrl = await oss.exists(ossKey);
-      if (ossUrl) {
-        setCache(cacheKey, ossUrl);
-        return { success: true, data: { url: ossUrl, cached: true } };
-      }
-    } catch { /* OSS check failed, proceed to generate */ }
+    // 2. OSS 查询 和 DashScope 生成 并行竞速
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bizConfig = (eggCtx.app.config as any).bizConfig;
+    const apiKey = process.env.QIANWEN_API_KEY || bizConfig?.ai?.qianwen?.apiKey || '';
+
+    const ossKey = `tts-cache/${cacheKey}.mp3`;
+    const oss = this.getOSSService(eggCtx);
+
+    // 并行发出两个请求
+    const ossPromise = oss.exists(ossKey).catch(() => null);
+    const ttsPromise = new TTSProvider(apiKey).synthesize(text, voice, 'Japanese');
+
+    // OSS 先到且命中 → 直接返回，取消 DashScope（DashScope 无法取消，但结果丢弃即可）
+    const ossUrl = await ossPromise;
+    if (ossUrl) {
+      setCache(cacheKey, ossUrl);
+      return { success: true, data: { url: ossUrl, cached: true } };
+    }
 
     try {
-      // 2. 调 TTS API
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const bizConfig = (eggCtx.app.config as any).bizConfig;
-      const apiKey = process.env.QIANWEN_API_KEY || bizConfig?.ai?.qianwen?.apiKey || '';
-      const ttsProvider = new TTSProvider(apiKey);
-      const result = await ttsProvider.synthesize(text, voice, 'Japanese');
+      // OSS miss，等 DashScope 结果
+      const result = await ttsPromise;
 
-      // 3. 先返回 DashScope 临时 URL（快速响应），后台异步上传到 OSS
+      // 先返回 DashScope 临时 URL（快速响应），后台异步上传到 OSS
       const oss = this.getOSSService(eggCtx);
       const ossKeyVal = `tts-cache/${cacheKey}.mp3`;
       // 后台上传：不阻塞响应
