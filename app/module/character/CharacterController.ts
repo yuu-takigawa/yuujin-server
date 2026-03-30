@@ -55,6 +55,7 @@ export class CharacterController {
       hobbies: body.hobbies as string[] | undefined,
       location: body.location as string | undefined,
       bio: body.bio as string | undefined,
+      voice: body.voice as string | undefined,
     });
     return { success: true, data: character };
   }
@@ -146,6 +147,7 @@ export class CharacterController {
       hobbies: body.hobbies as string[] | undefined,
       location: body.location as string | undefined,
       bio: body.bio as string | undefined,
+      voice: body.voice as string | undefined,
     });
 
     if (!character) {
