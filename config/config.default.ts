@@ -88,7 +88,7 @@ export default () => {
       provider: process.env.STT_PROVIDER || 'dashscope',
       dashscope: {
         // 复用 QIANWEN_API_KEY，此处不单独存储
-        model: process.env.DASHSCOPE_STT_MODEL || 'sensevoice-v1',
+        model: process.env.DASHSCOPE_STT_MODEL || 'qwen3-asr-flash',
       },
       whisper: {
         apiKey: process.env.OPENAI_API_KEY || '',
