@@ -18,11 +18,17 @@ import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
 import * as crypto from 'crypto';
 import { PassThrough } from 'stream';
+import { v4 as uuidv4 } from 'uuid';
 import { DashScopeSTTProvider } from './stt/DashScopeSTTProvider';
 import { WhisperProvider } from './stt/WhisperProvider';
 import { STTProvider } from './stt/STTProvider';
 import { TTSProvider } from './tts/TTSProvider';
 import { OSSService } from '../../common/OSSService';
+
+// ─── STT 积分 ───
+const STT_CREDITS_PER_USE = 5;
+const STT_MIN_TIER = 'pro'; // free 不可用
+const TIER_WEIGHT: Record<string, number> = { free: 0, pro: 1, max: 2, admin: 3 };
 
 // ─── TTS 缓存（24h TTL）───
 interface CacheEntry {
@@ -92,10 +98,32 @@ export class VoiceController {
     });
   }
 
-  /** POST /voice/transcribe — 语音转文字 */
+  /** POST /voice/transcribe — 语音转文字（Pro/Max/Admin，5pt/次） */
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/transcribe' })
   async transcribe(@Context() ctx: EggContext) {
     const eggCtx = ctx as unknown as EggCtx;
+    const userId = (eggCtx as any).userId as string;
+
+    // ── 会员等级 + 积分检查 ──
+    const user = await eggCtx.model.User.findOne({ id: userId });
+    if (!user) { eggCtx.status = 401; return { success: false, error: 'User not found' }; }
+    const userData = typeof (user as any).getRaw === 'function' ? (user as any).getRaw() : user;
+    const membership = (userData.membership as string) || 'free';
+    const isAdmin = membership === 'admin';
+    const userWeight = TIER_WEIGHT[membership] ?? 0;
+
+    if (userWeight < (TIER_WEIGHT[STT_MIN_TIER] ?? 1)) {
+      eggCtx.status = 403;
+      return { success: false, error: 'membership_required', requiredTier: STT_MIN_TIER };
+    }
+
+    if (!isAdmin) {
+      const credits = (userData.credits as number) || 0;
+      if (credits < STT_CREDITS_PER_USE) {
+        eggCtx.status = 402;
+        return { success: false, error: 'insufficient_credits', required: STT_CREDITS_PER_USE, current: credits };
+      }
+    }
 
     let fileStream: NodeJS.ReadableStream & { mimeType?: string; filename?: string };
     let fields: Record<string, string> = {};
@@ -139,6 +167,22 @@ export class VoiceController {
     try {
       const provider = this.getSTTProvider(eggCtx);
       const result = await provider.transcribe(buffer, mimeType, language);
+
+      // 转写成功，扣积分
+      if (!isAdmin) {
+        const currentCredits = (userData.credits as number) || 0;
+        const balanceAfter = Math.max(0, currentCredits - STT_CREDITS_PER_USE);
+        await eggCtx.model.User.update({ id: userId }, { credits: balanceAfter });
+        await eggCtx.model.CreditLog.create({
+          id: uuidv4(),
+          userId,
+          amount: -STT_CREDITS_PER_USE,
+          type: 'stt_consume',
+          description: '音声入力消耗',
+          balanceAfter,
+        });
+      }
+
       return { success: true, data: result };
     } catch (err) {
       eggCtx.status = 500;
