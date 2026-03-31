@@ -1,71 +1,62 @@
 /**
  * DashScopeSTTProvider — 阿里云百炼语音识别
  *
- * 使用 DashScope Paraformer API（同步短音频识别，<= 60s）。
- * 与 Chat AI 共用同一个 QIANWEN_API_KEY，无需额外开通服务。
+ * 使用 DashScope OpenAI 兼容端点，与 Whisper API 格式一致。
+ * 共用 QIANWEN_API_KEY，无需额外开通。
  *
- * 支持模型：
- *   paraformer-realtime-v2  — 通用实时识别（默认）
- *   fun-asr-realtime        — 百炼平台别名
- *
- * 文档: https://help.aliyun.com/zh/model-studio/developer-reference/paraformer
+ * 模型: sensevoice-v1（50+语言，含日语）
+ * 文档: https://help.aliyun.com/zh/model-studio/developer-reference/openai-audio
  */
 
 import { STTProvider, STTResult } from './STTProvider';
-
-interface DashScopeRecognitionSentence {
-  text: string;
-  begin_time?: number;
-  end_time?: number;
-}
-
-interface DashScopeRecognitionOutput {
-  text?: string;
-  sentence?: DashScopeRecognitionSentence[];
-}
-
-interface DashScopeRecognitionResponse {
-  output?: DashScopeRecognitionOutput;
-  request_id?: string;
-  code?: string;
-  message?: string;
-}
 
 export class DashScopeSTTProvider implements STTProvider {
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string, model = 'paraformer-realtime-v2') {
+  constructor(apiKey: string, model = 'sensevoice-v1') {
     this.apiKey = apiKey;
     this.model = model;
   }
 
   async transcribe(audio: Buffer, mimeType: string, language = 'ja'): Promise<STTResult> {
-    const audioBase64 = audio.toString('base64');
-    const format = mimeToFormat(mimeType);
+    const ext = mimeToExt(mimeType);
 
-    const body = {
-      model: this.model,
-      input: {
-        audio: audioBase64,
-      },
-      parameters: {
-        format,
-        language_hints: [language],
-        enable_punctuation_prediction: true,
-        enable_inverse_text_normalization: true,
-      },
-    };
+    // 构建 multipart/form-data（与 OpenAI Whisper API 格式一致）
+    const boundary = `----FormBoundary${Date.now()}`;
+    const parts: Buffer[] = [];
+
+    // file 字段
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.${ext}"\r\nContent-Type: ${mimeType}\r\n\r\n`,
+    ));
+    parts.push(audio);
+    parts.push(Buffer.from('\r\n'));
+
+    // model 字段
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n${this.model}\r\n`,
+    ));
+
+    // language 字段
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${language}\r\n`,
+    ));
+
+    // 结束
+    parts.push(Buffer.from(`--${boundary}--\r\n`));
+
+    const body = Buffer.concat(parts);
 
     const response = await fetch(
-      'https://dashscope.aliyuncs.com/api/v1/services/audio/asr/recognition',
+      'https://dashscope.aliyuncs.com/compatible-mode/v1/audio/transcriptions',
       {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
         },
-        body: JSON.stringify(body),
+        body,
       },
     );
 
@@ -74,26 +65,14 @@ export class DashScopeSTTProvider implements STTProvider {
       throw new Error(`DashScope STT HTTP error: ${response.status} ${errText}`);
     }
 
-    const json = await response.json() as DashScopeRecognitionResponse;
-
-    // API 级错误（如参数错误）
-    if (json.code && json.code !== '200' && json.code !== 'Success') {
-      throw new Error(`DashScope STT error: ${json.code} ${json.message}`);
-    }
-
-    const output = json.output || {};
-
-    // 优先用 output.text，否则拼接 sentences
-    const text =
-      output.text ||
-      (output.sentence || []).map((s) => s.text).join('') ||
-      '';
+    const json = await response.json() as { text?: string };
+    const text = json.text || '';
 
     return { text: text.trim(), language };
   }
 }
 
-function mimeToFormat(mime: string): string {
+function mimeToExt(mime: string): string {
   const map: Record<string, string> = {
     'audio/m4a': 'm4a',
     'audio/mp4': 'm4a',

@@ -27,6 +27,11 @@ export default () => {
     charset: 'utf8mb4',
   };
 
+  // Multipart: 允许音频文件上传（STT 语音输入）
+  config.multipart = {
+    fileExtensions: ['.webm', '.m4a', '.wav', '.ogg', '.aac', '.flac', '.pcm'],
+  };
+
   // Middleware
   config.middleware = ['cors', 'auth'];
 
@@ -83,7 +88,7 @@ export default () => {
       provider: process.env.STT_PROVIDER || 'dashscope',
       dashscope: {
         // 复用 QIANWEN_API_KEY，此处不单独存储
-        model: process.env.DASHSCOPE_STT_MODEL || 'paraformer-realtime-v2',
+        model: process.env.DASHSCOPE_STT_MODEL || 'sensevoice-v1',
       },
       whisper: {
         apiKey: process.env.OPENAI_API_KEY || '',
