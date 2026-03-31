@@ -9,13 +9,17 @@
 
 import { Subscription } from 'egg';
 import { productAIChat, ProductAIConfig } from '../module/ai/ProductAIService';
-import { buildGrowthPrompt } from 'yuujin-prompts';
+import { buildGrowthPrompt, buildConversationSummaryPrompt } from 'yuujin-prompts';
 import { TopicService } from '../module/topic/TopicService';
 
 /** 触发成长的最低消息数 */
 const MIN_MESSAGES_TO_GROW = 3;
 /** 最后一条消息多久后才触发成长（毫秒） */
 const IDLE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+/** 触发对话归档的消息数阈值 */
+const ARCHIVE_THRESHOLD = 100;
+/** 归档时保留的最近消息数 */
+const ARCHIVE_KEEP_RECENT = 30;
 
 function boneToRaw(bone: unknown): Record<string, unknown> {
   if (bone && typeof (bone as { getRaw?: () => Record<string, unknown> }).getRaw === 'function') {
@@ -163,5 +167,73 @@ export default class GrowthEngine extends Subscription {
     } catch (err) {
       ctx.logger.warn(`[GrowthEngine] Topic pre-generation failed for ${friendshipId}:`, err);
     }
+
+    // Archive conversation history if total messages exceed threshold
+    try {
+      await this.archiveIfNeeded(ctx, friendship, conversationIds, charData, aiConfig);
+    } catch (err) {
+      ctx.logger.warn(`[GrowthEngine] Archive failed for ${friendshipId}:`, err);
+    }
+  }
+
+  private async archiveIfNeeded(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ctx: any,
+    friendship: Record<string, unknown>,
+    conversationIds: unknown[],
+    charData: Record<string, unknown>,
+    aiConfig: ProductAIConfig,
+  ) {
+    const friendshipId = friendship.id;
+
+    // Count total messages across all conversations
+    const allMessages = await ctx.model.Message.find({
+      conversationId: conversationIds,
+    }).order('created_at ASC');
+
+    const totalCount = allMessages ? allMessages.length : 0;
+    if (totalCount <= ARCHIVE_THRESHOLD) return;
+
+    const allMsgs = (allMessages as unknown[]).map(boneToRaw);
+
+    // Messages to archive = all except the most recent ARCHIVE_KEEP_RECENT
+    const toArchive = allMsgs.slice(0, totalCount - ARCHIVE_KEEP_RECENT);
+    if (toArchive.length === 0) return;
+
+    // Build dialog text from messages to archive
+    const archiveDialogText = toArchive
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => `[${m.role === 'user' ? 'ユーザー' : charData.name}]: ${m.content}`)
+      .join('\n');
+
+    const existingSummary = (friendship.conversationSummary as string) || null;
+
+    const { system: sysPrompt, user: userPrompt } = buildConversationSummaryPrompt(
+      charData.name as string,
+      archiveDialogText,
+      existingSummary,
+    );
+
+    const summaryText = await productAIChat(
+      aiConfig,
+      [{ role: 'user', content: userPrompt }],
+      sysPrompt,
+    );
+
+    if (!summaryText?.trim()) return;
+
+    // Save summary and mark archived messages
+    await ctx.model.Friendship.update(
+      { id: friendshipId },
+      { conversationSummary: summaryText.trim() },
+    );
+
+    // Mark archived messages (set metadata.archived = true)
+    const archiveIds = toArchive.map((m) => m.id);
+    for (const msgId of archiveIds) {
+      await ctx.model.Message.update({ id: msgId }, { metadata: JSON.stringify({ archived: true }) });
+    }
+
+    ctx.logger.info(`[GrowthEngine] Archived ${archiveIds.length} messages for friendship ${friendshipId}, kept ${ARCHIVE_KEEP_RECENT} recent`);
   }
 }

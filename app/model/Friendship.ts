@@ -26,6 +26,10 @@ export default class Friendship extends Bone {
   @Column()
   memory!: string;
 
+  /** 历史对话归档摘要（GrowthEngine 生成，防止上下文膨胀） */
+  @Column({ name: 'conversation_summary' })
+  conversationSummary!: string;
+
   /** 上次 GrowthEngine 运行时间 */
   @Column({ name: 'last_growth_at' })
   lastGrowthAt!: Date;

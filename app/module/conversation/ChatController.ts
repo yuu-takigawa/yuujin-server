@@ -179,10 +179,11 @@ export class ChatController {
     const stream = new PassThrough();
     eggCtx.body = stream;
 
-    // Build system prompt: Layer1(rules) + soul + memory + level
+    // Build system prompt: Layer1(rules) + soul + memory + summary + level
     const systemPrompt = buildSystemPrompt({
       soul: (friendshipData?.soul as string) || null,
       memory: (friendshipData?.memory as string) || null,
+      conversationSummary: (friendshipData?.conversationSummary as string) || null,
       userLevel: (userData?.jpLevel as string) || undefined,
     });
 
