@@ -18,8 +18,7 @@ import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
 import * as crypto from 'crypto';
 import { PassThrough } from 'stream';
-// @ts-ignore — lamejs has no types
-import lamejs from 'lamejs';
+import { createMp3Encoder } from './tts/mp3encoder';
 import { v4 as uuidv4 } from 'uuid';
 import { DashScopeSTTProvider } from './stt/DashScopeSTTProvider';
 import { WhisperProvider } from './stt/WhisperProvider';
@@ -453,7 +452,7 @@ export class VoiceController {
     const apiKey = process.env.QIANWEN_API_KEY || bizConfig?.ai?.qianwen?.apiKey || '';
 
     // MP3 编码器：24kHz mono 128kbps
-    const mp3enc = new lamejs.Mp3Encoder(1, 24000, 128);
+    const mp3enc = createMp3Encoder(1, 24000, 128);
 
     try {
       const response = await fetch(
