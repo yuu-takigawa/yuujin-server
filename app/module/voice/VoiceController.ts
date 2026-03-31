@@ -18,6 +18,8 @@ import { EggContext } from '@eggjs/tegg';
 import { Context as EggCtx } from 'egg';
 import * as crypto from 'crypto';
 import { PassThrough } from 'stream';
+// @ts-ignore — lamejs has no types
+import lamejs from 'lamejs';
 import { v4 as uuidv4 } from 'uuid';
 import { DashScopeSTTProvider } from './stt/DashScopeSTTProvider';
 import { WhisperProvider } from './stt/WhisperProvider';
@@ -404,6 +406,143 @@ export class VoiceController {
           setCache(cacheKeyStream, uploaded.url);
         })
         .catch(() => { /* silent — next request will retry */ });
+    }
+  }
+
+  /**
+   * POST /voice/tts-mp3 — 流式 TTS（chunked MP3）
+   *
+   * Body: { text: string, voice?: string }
+   * Response: audio/mpeg (chunked transfer)
+   *
+   * DashScope 流式返回 PCM → 实时编码 MP3 → chunked 输出。
+   * 浏览器 <audio> 元素天然支持 MP3 渐进式播放，无需等全部生成完。
+   * 缓存命中时 302 重定向到 OSS URL。
+   */
+  @HTTPMethod({ method: HTTPMethodEnum.GET, path: '/tts-mp3' })
+  async ttsMp3(@Context() ctx: EggContext) {
+    const eggCtx = ctx as unknown as EggCtx;
+
+    // GET 参数 + token 鉴权（Audio 元素无法设 Header，token 走 query）
+    const query = eggCtx.query || {};
+    const text = (query.text || '').trim();
+    if (!text) { eggCtx.status = 400; return { success: false, error: 'text is required' }; }
+    if (text.length > 1500) { eggCtx.status = 400; return { success: false, error: 'text too long (max 1500 chars)' }; }
+
+    const voice = query.voice || 'Cherry';
+    const cacheKey = getCacheKey(text, voice);
+
+    // 缓存命中 → 302 重定向
+    const cachedUrl = getCached(cacheKey);
+    if (cachedUrl) {
+      eggCtx.redirect(cachedUrl);
+      return;
+    }
+
+    // 未命中 → 流式生成 MP3
+    eggCtx.set('Content-Type', 'audio/mpeg');
+    eggCtx.set('Cache-Control', 'no-cache');
+    eggCtx.set('Transfer-Encoding', 'chunked');
+    eggCtx.set('X-Accel-Buffering', 'no');
+
+    const output = new PassThrough();
+    eggCtx.body = output;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bizConfig = (eggCtx.app.config as any).bizConfig;
+    const apiKey = process.env.QIANWEN_API_KEY || bizConfig?.ai?.qianwen?.apiKey || '';
+
+    // MP3 编码器：24kHz mono 128kbps
+    const mp3enc = new lamejs.Mp3Encoder(1, 24000, 128);
+
+    try {
+      const response = await fetch(
+        'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'X-DashScope-SSE': 'enable',
+          },
+          body: JSON.stringify({
+            model: 'qwen3-tts-flash',
+            input: { text, voice, language_type: 'Japanese' },
+          }),
+        },
+      );
+
+      if (!response.ok || !response.body) {
+        output.end();
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      const allMp3Chunks: Buffer[] = []; // 收集完整 MP3 用于缓存
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buf += decoder.decode(value as Uint8Array, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const jsonStr = line.slice(5).trim();
+          if (!jsonStr) continue;
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const parsed = JSON.parse(jsonStr) as any;
+            const audioData = parsed?.output?.audio?.data;
+            if (audioData) {
+              // base64 PCM → Int16Array → MP3 frames
+              const pcmBuf = Buffer.from(audioData, 'base64');
+              const int16 = new Int16Array(pcmBuf.buffer, pcmBuf.byteOffset, pcmBuf.length / 2);
+              const mp3Frames = mp3enc.encodeBuffer(int16);
+              if (mp3Frames.length > 0) {
+                const mp3Buf = Buffer.from(mp3Frames);
+                output.write(mp3Buf);
+                allMp3Chunks.push(mp3Buf);
+              }
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      }
+
+      // flush 编码器剩余数据
+      const mp3End = mp3enc.flush();
+      if (mp3End.length > 0) {
+        const mp3Buf = Buffer.from(mp3End);
+        output.write(mp3Buf);
+        allMp3Chunks.push(mp3Buf);
+      }
+    } catch { /* stream error — output will end */ }
+
+    output.end();
+
+    // 后台异步上传完整 MP3 到 OSS + 写缓存
+    // （不阻塞响应，下次请求命中缓存）
+    if (!getCached(cacheKey)) {
+      try {
+        const oss = this.getOSSService(eggCtx);
+        const ossKey = `tts-cache/${cacheKey}.mp3`;
+        // 重新生成完整音频（非流式）上传 OSS
+        const ttsProvider = new TTSProvider(apiKey);
+        ttsProvider.synthesize(text, voice, 'Japanese')
+          .then(async (result) => {
+            const audioRes = await fetch(result.audioUrl);
+            if (!audioRes.ok) return;
+            const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+            const uploaded = await oss.upload(ossKey, audioBuffer, 'audio/mpeg');
+            setCache(cacheKey, uploaded.url);
+          })
+          .catch(() => { /* silent */ });
+      } catch { /* silent */ }
     }
   }
 }

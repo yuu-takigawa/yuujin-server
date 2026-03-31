@@ -13,14 +13,20 @@ export default function authMiddleware(): (ctx: Context, next: () => Promise<voi
       return;
     }
 
+    let token: string | undefined;
     const authorization = ctx.get('authorization');
-    if (!authorization || !authorization.startsWith('Bearer ')) {
-      ctx.status = 401;
-      ctx.body = { error: 'Missing or invalid authorization header' };
-      return;
+    if (authorization && authorization.startsWith('Bearer ')) {
+      token = authorization.slice(7);
+    } else if (ctx.query.token) {
+      // Audio 元素等无法设 Header 的场景，允许 query 参数传 token
+      token = ctx.query.token as string;
     }
 
-    const token = authorization.slice(7);
+    if (!token) {
+      ctx.status = 401;
+      ctx.body = { error: 'Missing or invalid authorization' };
+      return;
+    }
     try {
       const jwtConfig = (ctx.app.config as any).bizConfig.jwt;
       const payload = verifyToken(token, jwtConfig.secret);
