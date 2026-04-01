@@ -367,6 +367,7 @@ export class VoiceController {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
+      let isFirstAudioChunk = true;
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
@@ -384,8 +385,21 @@ export class VoiceController {
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const parsed = JSON.parse(jsonStr) as any;
-            const audioData = parsed?.output?.audio?.data;
+            let audioData = parsed?.output?.audio?.data;
             if (audioData) {
+              // 第一个音频 chunk 做 5ms 淡入，消除静音→音频的跳变爆破音
+              if (isFirstAudioChunk) {
+                isFirstAudioChunk = false;
+                const pcmBuf = Buffer.from(audioData, 'base64');
+                const fadeSamples = Math.min(Math.floor(24000 * 0.005), Math.floor(pcmBuf.length / 2)); // 5ms
+                for (let i = 0; i < fadeSamples; i++) {
+                  const gain = i / fadeSamples;
+                  const off = i * 2;
+                  const sample = pcmBuf.readInt16LE(off);
+                  pcmBuf.writeInt16LE(Math.round(sample * gain), off);
+                }
+                audioData = pcmBuf.toString('base64');
+              }
               stream.write(`data: ${JSON.stringify({ audio: audioData })}\n\n`);
             }
           } catch { /* skip malformed lines */ }
