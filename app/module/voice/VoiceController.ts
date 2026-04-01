@@ -327,6 +327,14 @@ export class VoiceController {
     const stream = new PassThrough();
     eggCtx.body = stream;
 
+    // 先发 200ms 静音 PCM（24kHz 16bit mono = 9600 bytes），
+    // 前端构造 WAV 时音频自带静音开头，浏览器管线启动爆破音被吸收
+    const SILENCE_DURATION_MS = 200;
+    const silenceBytes = Math.floor(24000 * (SILENCE_DURATION_MS / 1000)) * 2;
+    const silenceBuf = Buffer.alloc(silenceBytes); // 全零 = 静音
+    const silenceB64 = silenceBuf.toString('base64');
+    stream.write(`data: ${JSON.stringify({ audio: silenceB64 })}\n\n`);
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const bizConfig = (eggCtx.app.config as any).bizConfig;
     const apiKey = process.env.QIANWEN_API_KEY || bizConfig?.ai?.qianwen?.apiKey || '';
