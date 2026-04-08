@@ -18,6 +18,8 @@ import ExportMembershipPlan from '../../../app/model/MembershipPlan';
 import ExportDeviceToken from '../../../app/model/DeviceToken';
 import ExportTopicCard from '../../../app/model/TopicCard';
 import ExportVerificationCode from '../../../app/model/VerificationCode';
+import ExportRedeemCode from '../../../app/model/RedeemCode';
+import ExportRedeemLog from '../../../app/model/RedeemLog';
 
 declare module 'egg' {
   interface IModel {
@@ -36,5 +38,7 @@ declare module 'egg' {
     DeviceToken: ReturnType<typeof ExportDeviceToken>;
     TopicCard: ReturnType<typeof ExportTopicCard>;
     VerificationCode: ReturnType<typeof ExportVerificationCode>;
+    RedeemCode: ReturnType<typeof ExportRedeemCode>;
+    RedeemLog: ReturnType<typeof ExportRedeemLog>;
   }
 }
