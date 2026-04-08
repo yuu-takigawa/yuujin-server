@@ -31,6 +31,12 @@ export class AuthController {
         if (body.inviteCode !== requiredInviteCode) {
           return { success: false, error: '招待コードが正しくありません' };
         }
+        // Check invite quota
+        const maxInvited = parseInt(process.env.MAX_FREE_PRO || '100', 10);
+        const invitedCount = await eggCtx.model.User.where({ invited: 1 }).count();
+        if (invitedCount >= maxInvited) {
+          return { success: false, error: '招待コードの利用枠が上限に達しました' };
+        }
         invited = true;
       }
 

@@ -85,14 +85,6 @@ export class CreditController {
         eggCtx.body = { success: false, error: '招待コードで登録したユーザーのみ無料アップグレードが可能です' };
         return;
       }
-
-      const maxFreePro = parseInt(process.env.MAX_FREE_PRO || '100', 10);
-      const proCount = await eggCtx.model.User.where({ membership: 'pro' }).count();
-      if (proCount >= maxFreePro) {
-        eggCtx.status = 400;
-        eggCtx.body = { success: false, error: '無料キャンペーンの定員に達しました' };
-        return;
-      }
     }
 
     try {
