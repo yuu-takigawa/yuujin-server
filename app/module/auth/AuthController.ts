@@ -23,11 +23,15 @@ export class AuthController {
     @HTTPBody() body: { email: string; password: string; name: string; code: string; inviteCode?: string },
   ) {
     try {
-      // Invite code validation (beta period)
+      // Invite code validation (optional — invited users get free Pro upgrade)
       const eggCtx = ctx as unknown as EggCtx;
       const requiredInviteCode = (eggCtx.app.config as any).bizConfig?.inviteCode;
-      if (requiredInviteCode && body.inviteCode !== requiredInviteCode) {
-        return { success: false, error: '招待コードが正しくありません' };
+      let invited = false;
+      if (body.inviteCode && requiredInviteCode) {
+        if (body.inviteCode !== requiredInviteCode) {
+          return { success: false, error: '招待コードが正しくありません' };
+        }
+        invited = true;
       }
 
       const result = await this.authService.register(
@@ -36,6 +40,7 @@ export class AuthController {
         body.password,
         body.name,
         body.code,
+        invited,
       );
       return { success: true, data: result };
     } catch (err: unknown) {

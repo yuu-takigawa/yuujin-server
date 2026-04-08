@@ -19,7 +19,7 @@ export class AuthService {
   @Inject()
   verificationService!: VerificationService;
 
-  async register(ctx: Context, email: string, password: string, name: string, code?: string) {
+  async register(ctx: Context, email: string, password: string, name: string, code?: string, invited?: boolean) {
     const jwtConfig = ctx.app.config.bizConfig.jwt;
 
     // Verify email code (required)
@@ -43,6 +43,7 @@ export class AuthService {
       passwordHash,
       name,
       avatarEmoji,
+      invited: invited ? 1 : 0,
       settings: { defaultModelId: 'model-ernie-speed' },
     });
 

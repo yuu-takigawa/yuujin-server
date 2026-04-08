@@ -31,6 +31,9 @@ export default class User extends Bone {
   membership!: string;
 
   @Column()
+  invited!: number;
+
+  @Column()
   credits!: number;
 
   @Column({ name: 'credits_reset_at' })

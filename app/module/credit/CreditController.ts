@@ -74,8 +74,18 @@ export class CreditController {
       return;
     }
 
-    // Beta: Free Pro quota limit
+    // Beta: Only invited users can upgrade to Pro for free
     if (body.tier === 'pro') {
+      const user = await eggCtx.model.User.findOne({ id: userId });
+      const userData = user && typeof (user as any).getRaw === 'function'
+        ? (user as any).getRaw()
+        : user;
+      if (!userData || !userData.invited) {
+        eggCtx.status = 403;
+        eggCtx.body = { success: false, error: '招待コードで登録したユーザーのみ無料アップグレードが可能です' };
+        return;
+      }
+
       const maxFreePro = parseInt(process.env.MAX_FREE_PRO || '100', 10);
       const proCount = await eggCtx.model.User.where({ membership: 'pro' }).count();
       if (proCount >= maxFreePro) {

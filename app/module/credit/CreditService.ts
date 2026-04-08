@@ -41,6 +41,7 @@ export class CreditService {
       credits: isAdmin ? -1 : (userData.credits as number) || 0,
       dailyCredits: isAdmin ? -1 : (planData?.dailyCredits as number) || 100,
       membership,
+      invited: !!(userData.invited),
       creditsResetAt: userData.creditsResetAt,
     };
   }
