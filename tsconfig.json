@@ -24,7 +24,8 @@
     "app/**/*.ts",
     "config/**/*.ts",
     "scripts/**/*.ts",
-    "typings/**/*.d.ts"
+    "typings/**/*.d.ts",
+    "test/**/*.ts"
   ],
   "exclude": [
     "node_modules",
