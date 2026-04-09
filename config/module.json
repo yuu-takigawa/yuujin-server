@@ -12,5 +12,6 @@
   { "path": "../app/module/avatar" },
   { "path": "../app/module/voice" },
   { "path": "../app/module/notification" },
-  { "path": "../app/module/topic" }
+  { "path": "../app/module/topic" },
+  { "path": "../app/module/redeem" }
 ]
