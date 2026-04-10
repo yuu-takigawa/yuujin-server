@@ -223,14 +223,15 @@ export class CreditService {
 
     if (new Date(expiresAt) > new Date()) return; // not expired yet
 
-    // Expired: downgrade to free
-    const freePlan = await ctx.model.MembershipPlan.findOne({ tier: 'free' });
-    const freeCredits = freePlan ? (boneData(freePlan as Record<string, unknown>).dailyCredits as number) : 100;
+    // Expired: downgrade to base tier (invited users fall back to pro, others to free)
+    const fallbackTier = userData.invited ? 'pro' : 'free';
+    const fallbackPlan = await ctx.model.MembershipPlan.findOne({ tier: fallbackTier });
+    const fallbackCredits = fallbackPlan ? (boneData(fallbackPlan as Record<string, unknown>).dailyCredits as number) : 100;
 
     await ctx.model.User.update({ id: userId }, {
-      membership: 'free',
+      membership: fallbackTier,
       membershipExpiresAt: null,
-      credits: freeCredits,
+      credits: fallbackCredits,
       creditsResetAt: new Date(),
     });
   }

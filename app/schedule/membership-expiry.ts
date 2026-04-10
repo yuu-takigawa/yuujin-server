@@ -33,17 +33,22 @@ export default class MembershipExpiry extends Subscription {
         return;
       }
 
-      // Get free plan credits
+      // Get plan credits for fallback tiers
       const freePlan = await ctx.model.MembershipPlan.findOne({ tier: 'free' });
       const freeCredits = freePlan ? (boneData(freePlan).dailyCredits as number) : 100;
+      const proPlan = await ctx.model.MembershipPlan.findOne({ tier: 'pro' });
+      const proCredits = proPlan ? (boneData(proPlan).dailyCredits as number) : 500;
 
       let count = 0;
       for (const user of expiredUsers) {
         const userData = boneData(user);
+        // invited users fall back to pro, others to free
+        const fallbackTier = userData.invited ? 'pro' : 'free';
+        const fallbackCredits = fallbackTier === 'pro' ? proCredits : freeCredits;
         await ctx.model.User.update({ id: userData.id as string }, {
-          membership: 'free',
+          membership: fallbackTier,
           membershipExpiresAt: null,
-          credits: freeCredits,
+          credits: fallbackCredits,
           creditsResetAt: new Date(),
         });
         count++;

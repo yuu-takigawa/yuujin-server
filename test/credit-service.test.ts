@@ -155,6 +155,25 @@ describe('CreditService - membership expiry', () => {
     assert.strictEqual(result.credits, -1);
   });
 
+  it('should downgrade expired invited user to pro (not free)', async () => {
+    const pastDate = new Date(Date.now() - 86400000).toISOString();
+    const { ctx, mutations } = createMockCtx({
+      users: [{
+        id: 'user-1', membership: 'max', credits: 1500,
+        membershipExpiresAt: pastDate, invited: 1,
+        creditsResetAt: new Date().toISOString(),
+      }],
+      membershipPlans: PLANS,
+    });
+
+    const result = await service.getCredits(ctx, 'user-1');
+
+    const downgrade = mutations.usersUpdated.find((u) => u.data.membership === 'pro');
+    assert.ok(downgrade, 'Should have downgraded to pro, not free');
+    assert.strictEqual(downgrade!.data.credits, 500);
+    assert.strictEqual(result.membership, 'pro');
+  });
+
   it('should set membershipExpiresAt to null on upgradeMembership', async () => {
     const { ctx, mutations } = createMockCtx({
       users: [{
