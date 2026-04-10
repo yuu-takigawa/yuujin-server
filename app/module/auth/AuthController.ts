@@ -20,7 +20,7 @@ export class AuthController {
   @HTTPMethod({ method: HTTPMethodEnum.POST, path: '/register' })
   async register(
     @Context() ctx: EggContext,
-    @HTTPBody() body: { email: string; password: string; name: string; code: string },
+    @HTTPBody() body: { email: string; password: string; code: string; name?: string },
   ) {
     try {
       const eggCtx = ctx as unknown as EggCtx;

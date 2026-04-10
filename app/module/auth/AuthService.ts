@@ -19,7 +19,7 @@ export class AuthService {
   @Inject()
   verificationService!: VerificationService;
 
-  async register(ctx: Context, email: string, password: string, name: string, code?: string) {
+  async register(ctx: Context, email: string, password: string, name?: string, code?: string) {
     const jwtConfig = ctx.app.config.bizConfig.jwt;
 
     // Verify email code (required)
@@ -35,13 +35,14 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const id = uuidv4();
+    const displayName = name?.trim() || `yuujin-${id.slice(0, 8)}`;
 
     const avatarEmoji = '👤';
     await ctx.model.User.create({
       id,
       email,
       passwordHash,
-      name,
+      name: displayName,
       avatarEmoji,
       settings: { defaultModelId: 'model-ernie-speed' },
     });
@@ -51,7 +52,7 @@ export class AuthService {
     const refreshToken = signToken(payload, jwtConfig.secret, jwtConfig.refreshExpiresIn);
 
     return {
-      user: { id, email, name, avatarEmoji },
+      user: { id, email, name: displayName, avatarEmoji },
       token,
       refreshToken,
     };
