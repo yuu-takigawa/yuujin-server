@@ -39,6 +39,9 @@ export default class User extends Bone {
   @Column({ name: 'credits_reset_at' })
   creditsResetAt!: Date;
 
+  @Column({ name: 'membership_expires_at' })
+  membershipExpiresAt!: Date;
+
   @Column({ type: DataTypes.JSON })
   settings!: object;
 

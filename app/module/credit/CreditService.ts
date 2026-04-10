@@ -22,9 +22,12 @@ const TIER_WEIGHT: Record<string, number> = {
 })
 export class CreditService {
   /**
-   * Get user's credit balance and membership info
+   * Get user's credit balance and membership info.
+   * Also checks and handles membership expiry in real-time.
    */
   async getCredits(ctx: Context, userId: string) {
+    await this.checkAndExpireMembership(ctx, userId);
+
     const user = await ctx.model.User.findOne({ id: userId });
     if (!user) throw new Error('User not found');
     const userData = boneData(user as Record<string, unknown>);
@@ -43,6 +46,7 @@ export class CreditService {
       membership,
       invited: !!(userData.invited),
       creditsResetAt: userData.creditsResetAt,
+      membershipExpiresAt: userData.membershipExpiresAt || null,
     };
   }
 
@@ -50,6 +54,8 @@ export class CreditService {
    * Get available AI models for user's membership tier
    */
   async getModels(ctx: Context, userId: string) {
+    await this.checkAndExpireMembership(ctx, userId);
+
     const user = await ctx.model.User.findOne({ id: userId });
     if (!user) throw new Error('User not found');
     const userData = boneData(user as Record<string, unknown>);
@@ -74,6 +80,8 @@ export class CreditService {
    * Returns model info or throws error
    */
   async validateChatCredits(ctx: Context, userId: string, modelId?: string) {
+    await this.checkAndExpireMembership(ctx, userId);
+
     const user = await ctx.model.User.findOne({ id: userId });
     if (!user) throw new Error('User not found');
     const userData = boneData(user as Record<string, unknown>);
@@ -157,6 +165,7 @@ export class CreditService {
 
     await ctx.model.User.update({ id: userId }, {
       membership: tier,
+      membershipExpiresAt: null,
       credits: planData.dailyCredits as number,
       creditsResetAt: new Date(),
     });
@@ -197,6 +206,32 @@ export class CreditService {
       description: `${modelName} 対話消耗`,
       modelId,
       balanceAfter,
+    });
+  }
+
+  /**
+   * Check if user's time-limited membership has expired.
+   * If so, downgrade to free and reset credits to free tier.
+   */
+  private async checkAndExpireMembership(ctx: Context, userId: string) {
+    const user = await ctx.model.User.findOne({ id: userId });
+    if (!user) return;
+    const userData = boneData(user as Record<string, unknown>);
+
+    const expiresAt = userData.membershipExpiresAt as string | null;
+    if (!expiresAt) return; // permanent or free, nothing to check
+
+    if (new Date(expiresAt) > new Date()) return; // not expired yet
+
+    // Expired: downgrade to free
+    const freePlan = await ctx.model.MembershipPlan.findOne({ tier: 'free' });
+    const freeCredits = freePlan ? (boneData(freePlan as Record<string, unknown>).dailyCredits as number) : 100;
+
+    await ctx.model.User.update({ id: userId }, {
+      membership: 'free',
+      membershipExpiresAt: null,
+      credits: freeCredits,
+      creditsResetAt: new Date(),
     });
   }
 }

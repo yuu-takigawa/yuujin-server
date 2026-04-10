@@ -24,6 +24,7 @@ function createMockCtx(overrides: {
   // Track mutations for assertions
   const mutations = {
     redeemLogsCreated: [] as Record<string, unknown>[],
+    redeemLogsRemoved: [] as Record<string, unknown>[],
     redeemCodesUpdated: [] as { where: Record<string, unknown>; data: Record<string, unknown> }[],
     usersUpdated: [] as { where: Record<string, unknown>; data: Record<string, unknown> }[],
     creditLogsCreated: [] as Record<string, unknown>[],
@@ -50,6 +51,9 @@ function createMockCtx(overrides: {
           },
           create: (data: Record<string, unknown>) => {
             mutations.redeemLogsCreated.push(data);
+          },
+          remove: (query: Record<string, unknown>) => {
+            mutations.redeemLogsRemoved.push(query);
           },
         },
         User: {
@@ -85,7 +89,9 @@ describe('RedeemService', () => {
     service = new RedeemService();
   });
 
-  // -- Validation tests --
+  // ==============================
+  // Validation tests
+  // ==============================
 
   it('should throw when code does not exist', async () => {
     const { ctx } = createMockCtx({ redeemCodes: [] });
@@ -129,6 +135,7 @@ describe('RedeemService', () => {
         maxUses: 10, usedCount: 1, isActive: 1, expiresAt: null,
       }],
       redeemLogs: [{ userId: 'user-1', redeemCodeId: 'rc-1' }],
+      users: [{ id: 'user-1', membership: 'free', credits: 100 }],
     });
     await assert.rejects(
       () => service.redeem(ctx, 'user-1', 'used'),
@@ -136,7 +143,9 @@ describe('RedeemService', () => {
     );
   });
 
-  // -- Reward: invited --
+  // ==============================
+  // Reward: invited
+  // ==============================
 
   it('should set invited=1 for invite-type codes', async () => {
     const { ctx, mutations } = createMockCtx({
@@ -152,15 +161,15 @@ describe('RedeemService', () => {
     assert.strictEqual(mutations.usersUpdated.length, 1);
     assert.deepStrictEqual(mutations.usersUpdated[0].where, { id: 'user-1' });
     assert.strictEqual(mutations.usersUpdated[0].data.invited, 1);
-    // Should record log
     assert.strictEqual(mutations.redeemLogsCreated.length, 1);
     assert.strictEqual(mutations.redeemLogsCreated[0].userId, 'user-1');
-    // Should increment used_count
     assert.strictEqual(mutations.redeemCodesUpdated.length, 1);
     assert.strictEqual(mutations.redeemCodesUpdated[0].data.usedCount, 18);
   });
 
-  // -- Reward: credits --
+  // ==============================
+  // Reward: credits
+  // ==============================
 
   it('should add credits for credit-type codes', async () => {
     const { ctx, mutations } = createMockCtx({
@@ -174,18 +183,18 @@ describe('RedeemService', () => {
     const result = await service.redeem(ctx, 'user-1', 'bonus500');
 
     assert.deepStrictEqual(result.reward, { credits: 500 });
-    // Should update user credits: 80 + 500 = 580
     const userUpdate = mutations.usersUpdated.find((u) => u.data.credits !== undefined);
     assert.ok(userUpdate);
     assert.strictEqual(userUpdate!.data.credits, 580);
-    // Should write credit log
     assert.strictEqual(mutations.creditLogsCreated.length, 1);
     assert.strictEqual(mutations.creditLogsCreated[0].amount, 500);
     assert.strictEqual(mutations.creditLogsCreated[0].type, 'redeem');
     assert.strictEqual(mutations.creditLogsCreated[0].balanceAfter, 580);
   });
 
-  // -- Reward: membership --
+  // ==============================
+  // Reward: permanent membership
+  // ==============================
 
   it('should upgrade membership for membership-type codes', async () => {
     const { ctx, mutations } = createMockCtx({
@@ -193,6 +202,7 @@ describe('RedeemService', () => {
         id: 'rc-3', code: 'GOPRO', reward: { membership: 'pro' },
         maxUses: 50, usedCount: 0, isActive: 1, expiresAt: null,
       }],
+      users: [{ id: 'user-1', membership: 'free', credits: 100 }],
       membershipPlans: [{ tier: 'pro', dailyCredits: 500 }],
     });
 
@@ -203,9 +213,187 @@ describe('RedeemService', () => {
     assert.ok(userUpdate);
     assert.strictEqual(userUpdate!.data.membership, 'pro');
     assert.strictEqual(userUpdate!.data.credits, 500);
+    assert.strictEqual(userUpdate!.data.membershipExpiresAt, null);
   });
 
-  // -- Case insensitivity --
+  it('should reject permanent membership for admin users', async () => {
+    const { ctx } = createMockCtx({
+      redeemCodes: [{
+        id: 'rc-3', code: 'GOPRO', reward: { membership: 'pro' },
+        maxUses: 50, usedCount: 0, isActive: 1, expiresAt: null,
+      }],
+      users: [{ id: 'user-1', membership: 'admin', credits: -1 }],
+    });
+
+    await assert.rejects(
+      () => service.redeem(ctx, 'user-1', 'gopro'),
+      (err: Error) => err.message.includes('管理者'),
+    );
+  });
+
+  // ==============================
+  // Reward: membership_days (campaign)
+  // ==============================
+
+  it('should grant 30-day Pro for helloyuujin to free users', async () => {
+    const { ctx, mutations } = createMockCtx({
+      redeemCodes: [{
+        id: 'rc-hello', code: 'HELLOYUUJIN',
+        reward: { membership_days: 30, membership_tier: 'pro' },
+        maxUses: 500, usedCount: 0, isActive: 1, expiresAt: null,
+      }],
+      users: [{ id: 'user-1', membership: 'free', credits: 50 }],
+      membershipPlans: [{ tier: 'pro', dailyCredits: 500 }],
+    });
+
+    const result = await service.redeem(ctx, 'user-1', 'helloyuujin');
+
+    assert.deepStrictEqual(result.reward, { membership_days: 30, membership_tier: 'pro' });
+
+    // Should set membership to pro with an expiry date
+    const userUpdate = mutations.usersUpdated.find((u) => u.data.membership !== undefined);
+    assert.ok(userUpdate);
+    assert.strictEqual(userUpdate!.data.membership, 'pro');
+    assert.strictEqual(userUpdate!.data.credits, 500);
+
+    // membershipExpiresAt should be ~30 days from now
+    const expiresAt = userUpdate!.data.membershipExpiresAt as Date;
+    assert.ok(expiresAt instanceof Date);
+    const diffDays = (expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    assert.ok(diffDays > 29 && diffDays <= 31, `Expected ~30 days, got ${diffDays}`);
+
+    // Should record log and increment count
+    assert.strictEqual(mutations.redeemLogsCreated.length, 1);
+    assert.strictEqual(mutations.redeemCodesUpdated[0].data.usedCount, 1);
+  });
+
+  it('should reject helloyuujin for pro users', async () => {
+    const { ctx } = createMockCtx({
+      redeemCodes: [{
+        id: 'rc-hello', code: 'HELLOYUUJIN',
+        reward: { membership_days: 30, membership_tier: 'pro' },
+        maxUses: 500, usedCount: 0, isActive: 1, expiresAt: null,
+      }],
+      users: [{ id: 'user-1', membership: 'pro', credits: 500 }],
+    });
+
+    await assert.rejects(
+      () => service.redeem(ctx, 'user-1', 'helloyuujin'),
+      (err: Error) => err.message.includes('無料プラン'),
+    );
+  });
+
+  it('should reject helloyuujin for max users', async () => {
+    const { ctx } = createMockCtx({
+      redeemCodes: [{
+        id: 'rc-hello', code: 'HELLOYUUJIN',
+        reward: { membership_days: 30, membership_tier: 'pro' },
+        maxUses: 500, usedCount: 0, isActive: 1, expiresAt: null,
+      }],
+      users: [{ id: 'user-1', membership: 'max', credits: 2000 }],
+    });
+
+    await assert.rejects(
+      () => service.redeem(ctx, 'user-1', 'helloyuujin'),
+      (err: Error) => err.message.includes('無料プラン'),
+    );
+  });
+
+  it('should reject helloyuujin for admin users', async () => {
+    const { ctx } = createMockCtx({
+      redeemCodes: [{
+        id: 'rc-hello', code: 'HELLOYUUJIN',
+        reward: { membership_days: 30, membership_tier: 'pro' },
+        maxUses: 500, usedCount: 0, isActive: 1, expiresAt: null,
+      }],
+      users: [{ id: 'user-1', membership: 'admin', credits: -1 }],
+    });
+
+    await assert.rejects(
+      () => service.redeem(ctx, 'user-1', 'helloyuujin'),
+      (err: Error) => err.message.includes('無料プラン'),
+    );
+  });
+
+  // ==============================
+  // Refund mechanism
+  // ==============================
+
+  it('should refund helloyuujin when user gets permanent pro', async () => {
+    const { ctx, mutations } = createMockCtx({
+      redeemCodes: [
+        // The permanent pro code being redeemed now
+        {
+          id: 'rc-perm', code: 'YUUJIN2026',
+          reward: { invited: true, membership: 'pro' },
+          maxUses: 100, usedCount: 5, isActive: 1, expiresAt: null,
+        },
+        // The campaign code previously redeemed
+        {
+          id: 'rc-hello', code: 'HELLOYUUJIN',
+          reward: { membership_days: 30, membership_tier: 'pro' },
+          maxUses: 500, usedCount: 42, isActive: 1, expiresAt: null,
+        },
+      ],
+      redeemLogs: [
+        // User previously redeemed helloyuujin
+        { id: 'log-hello', userId: 'user-1', redeemCodeId: 'rc-hello' },
+      ],
+      users: [{ id: 'user-1', membership: 'pro', membershipExpiresAt: '2026-05-01', credits: 500 }],
+      membershipPlans: [{ tier: 'pro', dailyCredits: 500 }],
+    });
+
+    await service.redeem(ctx, 'user-1', 'yuujin2026');
+
+    // Should have removed the helloyuujin log
+    assert.strictEqual(mutations.redeemLogsRemoved.length, 1);
+    assert.deepStrictEqual(mutations.redeemLogsRemoved[0], { id: 'log-hello' });
+
+    // Should have decremented helloyuujin's usedCount
+    const helloUpdate = mutations.redeemCodesUpdated.find(
+      (u) => u.where.id === 'rc-hello',
+    );
+    assert.ok(helloUpdate);
+    assert.strictEqual(helloUpdate!.data.usedCount, 41);
+
+    // User should now have permanent pro (membershipExpiresAt = null)
+    const userMembershipUpdate = mutations.usersUpdated.find((u) => u.data.membership === 'pro');
+    assert.ok(userMembershipUpdate);
+    assert.strictEqual(userMembershipUpdate!.data.membershipExpiresAt, null);
+  });
+
+  it('should NOT refund if user did not redeem helloyuujin before', async () => {
+    const { ctx, mutations } = createMockCtx({
+      redeemCodes: [
+        {
+          id: 'rc-perm', code: 'YUUJIN2026',
+          reward: { invited: true, membership: 'pro' },
+          maxUses: 100, usedCount: 5, isActive: 1, expiresAt: null,
+        },
+        {
+          id: 'rc-hello', code: 'HELLOYUUJIN',
+          reward: { membership_days: 30, membership_tier: 'pro' },
+          maxUses: 500, usedCount: 42, isActive: 1, expiresAt: null,
+        },
+      ],
+      redeemLogs: [], // No prior helloyuujin redemption
+      users: [{ id: 'user-1', membership: 'free', credits: 100 }],
+      membershipPlans: [{ tier: 'pro', dailyCredits: 500 }],
+    });
+
+    await service.redeem(ctx, 'user-1', 'yuujin2026');
+
+    // Should NOT have removed any logs or decremented helloyuujin
+    assert.strictEqual(mutations.redeemLogsRemoved.length, 0);
+    const helloUpdate = mutations.redeemCodesUpdated.find(
+      (u) => u.where.id === 'rc-hello',
+    );
+    assert.ok(!helloUpdate);
+  });
+
+  // ==============================
+  // Case insensitivity
+  // ==============================
 
   it('should match codes case-insensitively', async () => {
     const { ctx, mutations } = createMockCtx({
@@ -219,7 +407,9 @@ describe('RedeemService', () => {
     assert.strictEqual(mutations.redeemLogsCreated.length, 1);
   });
 
-  // -- Different user can use the same code --
+  // ==============================
+  // Different users can use same code
+  // ==============================
 
   it('should allow different users to use the same code', async () => {
     const { ctx, mutations } = createMockCtx({
@@ -230,13 +420,14 @@ describe('RedeemService', () => {
       redeemLogs: [{ userId: 'user-1', redeemCodeId: 'rc-1' }],
     });
 
-    // user-2 should be able to use it
     await service.redeem(ctx, 'user-2', 'shared');
     assert.strictEqual(mutations.redeemLogsCreated.length, 1);
     assert.strictEqual(mutations.redeemLogsCreated[0].userId, 'user-2');
   });
 
-  // -- Non-expired code with future date --
+  // ==============================
+  // Future expiry accepted
+  // ==============================
 
   it('should accept codes with future expiry', async () => {
     const futureDate = new Date(Date.now() + 86400000).toISOString();
